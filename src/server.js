@@ -23,6 +23,7 @@ import {
   failTask,
   getNextTask,
   listTasks,
+  recordEvidence,
   startTask
 } from './tasks.js';
 import { readRun, readRunLog, verifyTask } from './verify.js';
@@ -117,7 +118,8 @@ function stateFor(project, config, spec, tasks, next) {
     project: { path: project, name: config.projectName || path.basename(project) },
     config: {
       verification: config.verification,
-      context: config.context
+      context: config.context,
+      secrets: config.secrets
     },
     spec: { content: spec, check },
     tasks,
@@ -254,6 +256,22 @@ export async function createUiServer(project, options = {}) {
         }
         await readBody(req);
         const result = await completeTask(project, taskId);
+        json(res, 200, result);
+        return;
+      }
+
+      if (method === 'POST' && action === 'evidence') {
+        if (!sameOrigin(req)) {
+          json(res, 403, { error: 'Origin tidak diizinkan.' });
+          return;
+        }
+        const body = await readBody(req);
+        const result = await recordEvidence(project, taskId, {
+          criterion: body.criterion,
+          note: body.note,
+          type: body.type,
+          ref: body.ref
+        });
         json(res, 200, result);
         return;
       }

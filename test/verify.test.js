@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { addTask, completeTask, startTask } from '../src/tasks.js';
 import { verifyTask } from '../src/verify.js';
-import { makeProject, writeFile } from './helpers.js';
+import { makeProject, proveTask, writeFile } from './helpers.js';
 
 async function createTask(project, overrides = {}) {
   return addTask(project, {
@@ -25,8 +25,14 @@ test('passing verification allows completion', async () => {
     await startTask(project, task.id);
     const output = await verifyTask(project, task.id);
     assert.equal(output.result.ok, true, JSON.stringify(output.result, null, 2));
+    assert.equal(output.result.criteriaOk, false);
     assert.ok(output.result.commands[0].ok);
     assert.ok(output.result.fingerprint);
+    await assert.rejects(
+      () => completeTask(project, task.id),
+      /Bukti untuk .* acceptance criterion/i
+    );
+    await proveTask(project, task.id);
     const completed = await completeTask(project, task.id);
     assert.equal(completed.task.status, 'done');
     assert.ok(completed.task.completedAt);
@@ -72,6 +78,7 @@ test('editing after verification invalidates evidence', async () => {
     );
     const second = await verifyTask(project, task.id);
     assert.equal(second.result.ok, true);
+    await proveTask(project, task.id);
     const completed = await completeTask(project, task.id);
     assert.equal(completed.task.status, 'done');
   } finally {

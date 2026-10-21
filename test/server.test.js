@@ -68,6 +68,21 @@ test('dashboard requires a token and serves state', async (t) => {
   const verified = await verifyResponse.json();
   assert.equal(verified.ok, true, JSON.stringify(verified.result?.failedCommands));
   assert.equal(verified.task.status, 'in_progress');
+  assert.equal(verified.result.criteriaOk, false);
+
+  const evidenceResponse = await fetch(`http://127.0.0.1:${server.port}/api/tasks/T-001/evidence`, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      criterion: 'A1',
+      note: 'Task is visible in the dashboard state after creation',
+      type: 'test',
+      ref: 'server.test.js'
+    })
+  });
+  assert.equal(evidenceResponse.status, 200);
+  const evidence = await evidenceResponse.json();
+  assert.equal(evidence.criterion.proven, true);
 
   const completeResponse = await fetch(`http://127.0.0.1:${server.port}/api/tasks/T-001/complete`, {
     method: 'POST',

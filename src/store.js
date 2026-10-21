@@ -23,6 +23,7 @@ export const DEFAULT_CONFIG = {
   verification: {
     commands: [],
     requireVerification: true,
+    requireEvidence: true,
     strictScope: false,
     commandTimeoutMs: 300_000
   },
@@ -30,6 +31,20 @@ export const DEFAULT_CONFIG = {
     maxChars: 24_000,
     maxFiles: 2000,
     exclude: []
+  },
+  secrets: {
+    enabled: true,
+    ignore: [
+      '**/*.test.*',
+      '**/*.spec.*',
+      '**/__tests__/**',
+      '**/fixtures/**',
+      '**/mocks/**',
+      '**/*.md',
+      '**/docs/**',
+      '**/.env*'
+    ],
+    patterns: []
   },
   slop: {
     enabled: true,
@@ -294,6 +309,7 @@ export function normalizeTask(task) {
     failedAt: task.failedAt || null,
     attempts: Number.isInteger(task.attempts) ? task.attempts : 0,
     verification: task.verification || null,
+    evidence: task.evidence && typeof task.evidence === 'object' ? task.evidence : {},
     contract: task.contract || null,
     notes: Array.isArray(task.notes) ? task.notes : []
   };
@@ -326,7 +342,8 @@ export function configForAgent(config) {
     projectName: config.projectName,
     verification: config.verification,
     context: config.context,
-    slop: config.slop
+    slop: config.slop,
+    secrets: config.secrets
   };
 }
 

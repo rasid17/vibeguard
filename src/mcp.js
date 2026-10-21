@@ -21,6 +21,7 @@ import {
   failTask,
   getNextTask,
   listTasks,
+  recordEvidence,
   startTask
 } from './tasks.js';
 import { summarizeVerificationResult, verifyTask } from './verify.js';
@@ -33,7 +34,8 @@ Work one task at a time:
 3. vibeguard_start_task (acknowledgeCheckpoint only after explicit human approval).
 4. Implement only that task, inside its file scope.
 5. vibeguard_verify_task. If checks are slow, call it with async:true and poll vibeguard_verification_status.
-6. vibeguard_complete_task only after a passing verification. Then commit. Stop at checkpoints.
+6. Record evidence for every acceptance criterion with vibeguard_record_evidence (A1, A2, ...). Do not skip a criterion.
+7. vibeguard_complete_task only after a passing verification and complete evidence. Then commit. Stop at checkpoints.
 Never fake verification output, never add a task without acceptance criteria, and never edit the spec or task data to force a pass.`;
 
 const TOOLS = [
@@ -86,7 +88,7 @@ const TOOLS = [
   },
   {
     name: 'vibeguard_verify_task',
-    description: 'Run all configured checks plus slop and scope guards. Writes evidence and blocks completion if anything fails. Set async:true for long test suites.',
+    description: 'Run all configured checks plus slop, secret, and scope guards. Writes evidence and blocks completion if anything fails. Set async:true for long test suites.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -108,8 +110,24 @@ const TOOLS = [
     }
   },
   {
+    name: 'vibeguard_record_evidence',
+    description: 'Record proof for one acceptance criterion (A1, A2, ...). Use a test name, command result, screenshot path, or specific manual observation. Completion requires every criterion to be proven.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
+        criterion: { type: 'string', description: 'A1, A2, ... or 1, 2' },
+        note: { type: 'string', description: 'Specific proof, at least 5 characters' },
+        type: { type: 'string', description: 'test | manual | screenshot | command | review | other' },
+        ref: { type: 'string', description: 'Optional file:line, test name, URL, or screenshot path' }
+      },
+      required: ['taskId', 'criterion', 'note'],
+      additionalProperties: false
+    }
+  },
+  {
     name: 'vibeguard_complete_task',
-    description: 'Mark a task done. Only succeeds with fresh passing verification on the current working tree. Returns the next task and checkpoint.',
+    description: 'Mark a task done. Only succeeds with fresh passing verification on the current working tree and evidence for every acceptance criterion. Returns the next task and checkpoint.',
     inputSchema: {
       type: 'object',
       properties: { taskId: { type: 'string' } },
@@ -300,7 +318,10 @@ export async function startMcpServer(project) {
           summary: summarizeVerificationResult(output.result),
           failedCommands: output.result.failedCommands,
           slop: { ok: output.result.slop.ok, errors: output.result.slop.errors, warnings: output.result.slop.warnings.slice(0, 30) },
+          secrets: output.result.secrets,
           scope: output.result.scope,
+          criteria: output.result.criteria,
+          criteriaOk: output.result.criteriaOk,
           evidence: output.result.commands.map((command) => ({ name: command.name, ok: command.ok, log: command.log, outputTail: command.ok ? undefined : command.outputTail }))
         };
       }
@@ -323,9 +344,23 @@ export async function startMcpServer(project) {
           runId: job.result.result.runId,
           summary: summarizeVerificationResult(job.result.result),
           slop: { ok: job.result.result.slop.ok, errors: job.result.result.slop.errors, warnings: job.result.result.slop.warnings.slice(0, 30) },
+          secrets: job.result.result.secrets,
           scope: job.result.result.scope,
+          criteria: job.result.result.criteria,
+          criteriaOk: job.result.result.criteriaOk,
           finishedAt: job.finishedAt
         };
+      }
+      case 'vibeguard_record_evidence': {
+        if (!args.taskId) throw new VibeError('taskId wajib diisi.');
+        if (!args.criterion) throw new VibeError('criterion wajib diisi (A1, A2, ...).');
+        if (!args.note) throw new VibeError('note wajib diisi.');
+        return recordEvidence(project, args.taskId, {
+          criterion: args.criterion,
+          note: args.note,
+          type: args.type,
+          ref: args.ref
+        });
       }
       case 'vibeguard_complete_task': {
         if (!args.taskId) throw new VibeError('taskId wajib diisi.');

@@ -1,6 +1,6 @@
 # VibeGuard
 
-Quality gate lokal untuk vibe coding. VibeGuard tidak membuat aplikasi untuk Anda; ia memastikan coding agent bekerja dari spec yang jelas, mendapat konteks yang relevan, dan tidak bisa menandai task selesai tanpa bukti verifikasi.
+Quality gate lokal untuk vibe coding. VibeGuard tidak membuat aplikasi untuk Anda; ia memastikan coding agent bekerja dari spec yang jelas, mendapat konteks yang relevan, dan tidak bisa menandai task selesai tanpa verifikasi serta bukti untuk setiap acceptance criterion.
 
 Dibuat untuk pemakaian pribadi:
 
@@ -26,8 +26,8 @@ VibeGuard memaksakan lima gerbang:
 | Spec | `.vibeguard/spec.md` wajib punya problem, non-goals, dan acceptance criteria; placeholder ditolak |
 | Plan | Task wajib punya minimal satu acceptance criterion dan file scope |
 | Context | `get_context` menyusun context pack dari spec, konvensi, dan file yang relevan |
-| Verify | Menjalankan semua checks, slop scan, dan strict scope guard |
-| Evidence | `complete` hanya menerima verifikasi yang lulus dan fingerprint working tree masih sama |
+| Verify | Menjalankan semua checks, slop scan, secret scan, dan strict scope guard |
+| Evidence | `complete` hanya menerima verifikasi lulus, fingerprint + contract hash yang sama, dan bukti untuk setiap acceptance criterion |
 
 Checkpoint antar-layer/fase juga dipaksakan: agent harus berhenti, manusia menguji hasilnya, lalu secara eksplisit menyetujui task berikutnya. Bukan sekadar instruksi prompt — `start_task` akan menolak sampai checkpoint di-acknowledge.
 
@@ -103,6 +103,8 @@ vibeguard_start_task { taskId }
 → implementasi HANYA task itu
 vibeguard_verify_task { taskId }
 → perbaiki semua kegagalan
+vibeguard_record_evidence { taskId, criterion: "A1", note, type, ref }
+→ buktikan setiap criterion (A1, A2, ...)
 vibeguard_complete_task { taskId }
 → commit, lalu berhenti di checkpoint berikutnya
 ```
@@ -117,9 +119,10 @@ Tool yang tersedia:
 | `vibeguard_get_next_task` | satu task berikutnya + checkpoint |
 | `vibeguard_get_context` | context pack untuk satu task |
 | `vibeguard_start_task` | mulai satu task; checkpoint butuh ack |
-| `vibeguard_verify_task` | jalankan checks, slop, scope; mendukung `async: true` |
+| `vibeguard_verify_task` | jalankan checks, slop, secret, scope; mendukung `async: true` |
 | `vibeguard_verification_status` | cek job verifikasi async |
-| `vibeguard_complete_task` | gate completion dengan evidence segar |
+| `vibeguard_record_evidence` | catat bukti untuk satu acceptance criterion (`A1`, `A2`, ...) |
+| `vibeguard_complete_task` | gate completion dengan verifikasi segar + evidence lengkap |
 | `vibeguard_fail_task` | catat task gagal/blocked |
 | `vibeguard_add_task` | tambah task (acceptance wajib) |
 
@@ -131,6 +134,7 @@ vibeguard task start T-001
 vibeguard context T-001
 # implementasi
 vibeguard task verify T-001
+vibeguard task evidence T-001 A1 "test auth.test.ts > login valid" --type test --ref "auth.test.ts:42"
 vibeguard task done T-001
 ```
 
@@ -184,9 +188,9 @@ project/
 ├── CLAUDE.md                     # pointer untuk Claude Code
 ├── .mcp.json
 └── .vibeguard/
-    ├── config.json               # checks, slop, context
+    ├── config.json               # checks, evidence, slop, secret, context
     ├── spec.md                   # source of truth
-    ├── tasks.json                # task, status, evidence pointer
+    ├── tasks.json                # task, status, evidence A1/A2, run pointer
     ├── agent-protocol.md
     ├── context/T-001.md          # context pack terakhir
     └── runs/
@@ -211,8 +215,14 @@ Edit `.vibeguard/config.json`:
       { "name": "build", "command": "npm run build", "required": true }
     ],
     "requireVerification": true,
+    "requireEvidence": true,
     "strictScope": true,
     "commandTimeoutMs": 300000
+  },
+  "secrets": {
+    "enabled": true,
+    "ignore": ["**/*.test.*", "**/docs/**", "**/.env*"],
+    "patterns": ["/ACME-[0-9]{4}/g"]
   },
   "context": {
     "maxChars": 24000,
@@ -231,7 +241,9 @@ Edit `.vibeguard/config.json`:
 Hal penting:
 
 - **`strictScope: true`** membuat verifikasi gagal jika ada file berubah di luar `files` task. Butuh git untuk mendeteksi perubahan.
+- **`requireEvidence: true`** membuat `complete` menolak task sampai setiap acceptance criterion punya bukti (A1, A2, ...).
 - Spec dan acceptance/scope task di-hash saat start. Mengubahnya di tengah task akan memblokir verifikasi; start ulang task setelah perubahan disetujui manusia.
+- **`secrets`** memindai file yang berubah (atau semua file teks bila bukan git) untuk token/private key. Pattern bawaan mencakup GitHub, OpenAI, Anthropic, AWS, Google, Stripe, Slack, npm, dan private key. Pattern custom menerima teks literal atau `/regex/flags`.
 - **`required: false`** menjalankan check sebagai informasi, tidak memblokir.
 - **`errors`** memblokir verifikasi; **`warnings`** hanya dilaporkan.
 - Pattern slop berupa teks literal. Format `/regex/i` juga didukung.
@@ -240,21 +252,26 @@ Hal penting:
 
 `init` mendeteksi checks dari `package.json` (npm/pnpm/yarn/bun), `Cargo.toml`, `go.mod`, dan konfigurasi Python sederhana. Jika project tidak punya script yang cocok, edit config manual; verifikasi tanpa commands akan gagal.
 
-## Kenapa evidence tidak bisa dipalsukan
+## Evidence, secret, dan integritas
 
-`verify` menghitung fingerprint dari isi working tree (file tracked + untracked, tanpa `.vibeguard`) dan contract hash dari spec + acceptance/scope task. `complete` menghitung ulang keduanya:
+`verify` menghitung fingerprint dari isi working tree (file tracked + untracked, tanpa `.vibeguard`) dan contract hash dari spec + acceptance/scope task. `complete` menghitung ulang keduanya dan mengecek evidence:
 
 - jika kode berubah setelah verify, complete ditolak
 - jika spec atau kontrak task berubah setelah verify, complete ditolak
 - jika spec diubah setelah task dimulai, verify ditolak sampai task di-start ulang
 - jika task belum punya verifikasi lulus, complete ditolak
-- jika command wajib gagal, slop error, strict scope dilanggar, atau spec tidak valid, verify gagal
+- jika salah satu acceptance criterion belum punya bukti, complete ditolak
+- jika command wajib gagal, slop error, secret ditemukan, strict scope dilanggar, atau spec tidak valid, verify gagal
 
-Ini bukan jaminan kode benar. Ini jaminan bahwa **bukti yang dipakai untuk menyatakan selesai adalah bukti untuk kode, spec, dan scope yang benar-benar diverifikasi**.
+Setiap criterion punya ID stabil selama task: `A1`, `A2`, dan seterusnya. Bukti bisa berupa nama test, command, path screenshot, review, atau observasi manual yang spesifik. Ini **attestation**, bukan pembuktian otomatis: VibeGuard memaksa Anda/agent memetakan bukti ke tiap requirement, tetapi kualitas bukti tetap harus dinilai manusia. Secret scanner adalah lapisan tambahan, bukan jaminan bahwa kode bebas dari semua credential.
+
+Saat secret ditemukan, excerpt di log/evidence **di-mask** sehingga token tidak disalin ulang. Jangan menganggap log aman untuk dibagikan; output test tetap bisa mengandung data sensitif.
 
 ## Batasan saat ini
 
 - Tidak ada LLM bawaan. Perencanaan dilakukan oleh agent Anda lewat `vibeguard plan` atau MCP.
+- Evidence criterion bersifat attestation; VibeGuard tidak bisa menilai apakah test/observasi benar-benar membuktikan requirement.
+- Secret scanner berbasis pattern dan mengabaikan test/docs/env secara default; bukan deteksi entropy/ML menyeluruh.
 - Belum ada visual regression/screenshot review. Slop scan masih berbasis teks dan scope.
 - Dashboard belum mengedit spec; spec sengaja human-owned lewat editor.
 - Verifikasi di dashboard berjalan sinkron. Untuk test panjang, pakai MCP async atau CLI.
@@ -266,14 +283,14 @@ Ini bukan jaminan kode benar. Ini jaminan bahwa **bukti yang dipakai untuk menya
 - Dashboard hanya listen loopback dan membutuhkan token acak; POST juga memeriksa Origin.
 - Tidak ada network call, analytics, atau billing.
 - Raw source code tidak dikirim ke mana pun. Context pack dibuat lokal.
-- Jangan menaruh secret di `spec.md` atau task; context pack akan memasukkannya.
+- Jangan menaruh secret di `spec.md`, task, atau evidence. Evidence menolak pola token yang dikenal, dan excerpt secret di log di-mask, tetapi tetap jangan menyalin credential ke mana pun.
 - Log test dapat berisi output sensitif. `runs/` diabaikan git secara default.
 - Backup `AGENTS.md`/`CLAUDE.md`/MCP config lama disimpan di `.vibeguard/backups/` saat init mengubahnya.
 
 ## Development
 
 ```sh
-npm test        # 25 test: core, verification, contract, context, MCP, HTTP, CLI
+npm test        # 30 test: core, verification, contract, evidence, secret, context, MCP, HTTP, CLI
 npm run check   # test + help
 ```
 

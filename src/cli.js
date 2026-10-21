@@ -34,6 +34,7 @@ import {
   failTask,
   getNextTask,
   listTasks,
+  recordEvidence,
   startTask
 } from './tasks.js';
 import { summarizeVerificationResult, verifyTask } from './verify.js';
@@ -63,8 +64,9 @@ Perintah:
   task show <id>        Detail task
   task next             Task berikutnya + checkpoint
   task start <id>       Mulai task (--acknowledge untuk checkpoint)
-  task verify <id>      Jalankan checks, slop scan, scope guard
-  task done <id>        Tandai selesai; wajib bukti verifikasi segar
+  task verify <id>      Jalankan checks, slop scan, secret scan, scope guard
+  task evidence <id> [A1] ["bukti"]  Lihat/catat bukti acceptance criterion
+  task done <id>        Tandai selesai; wajib verifikasi + evidence lengkap
   task fail <id> "..."  Catat task gagal/blocked
   verify [id]           Alias task verify
   context [id]          Context pack untuk task
@@ -157,7 +159,14 @@ function printTask(task, { verbose = false } = {}) {
   if (task.description) out(`  desc: ${task.description}`);
   if (task.acceptance.length) {
     out('  acceptance:');
-    for (const item of task.acceptance) out(`    - ${item}`);
+    task.acceptance.forEach((item, index) => {
+      const criterionId = `A${index + 1}`;
+      const evidence = task.evidence?.[criterionId];
+      out(`    [${criterionId}] ${item}  ${evidence?.note ? '[proven]' : '[unproven]'}`);
+      if (evidence?.note) {
+        out(`          ${evidence.type}: ${evidence.note}${evidence.ref ? ` (${evidence.ref})` : ''}`);
+      }
+    });
   }
   if (task.files.length) out(`  files: ${task.files.join(', ')}`);
   if (task.dependsOn.length) out(`  dependsOn: ${task.dependsOn.join(', ')}`);
@@ -526,9 +535,11 @@ async function commandTask(project, args, globals) {
       out('Belum ada task. Tambah dengan `vibeguard task add`.');
       return;
     }
-    out(`${pad('ID', 8)} ${pad('STATUS', 15)} ${pad('LAYER', 10)} ${pad('PHASE', 6)} ${pad('VERIFY', 6)} TITLE`);
+    out(`${pad('ID', 8)} ${pad('STATUS', 15)} ${pad('LAYER', 10)} ${pad('PHASE', 6)} ${pad('VERIFY', 6)} ${pad('EVID', 7)} TITLE`);
     for (const task of tasks) {
-      out(`${pad(task.id, 8)} ${pad(statusLabel(task.status), 15)} ${pad(task.layer, 10)} ${pad(task.phase, 6)} ${pad(verificationBadge(task.verification), 6)} ${task.title}${task.blockers.length ? ` (blocked by ${task.blockers.join(', ')})` : ''}`);
+      const proven = (task.criteria || []).filter((criterion) => criterion.proven).length;
+      const total = (task.criteria || []).length;
+      out(`${pad(task.id, 8)} ${pad(statusLabel(task.status), 15)} ${pad(task.layer, 10)} ${pad(task.phase, 6)} ${pad(verificationBadge(task.verification), 6)} ${pad(`${proven}/${total}`, 7)} ${task.title}${task.blockers.length ? ` (blocked by ${task.blockers.join(', ')})` : ''}`);
     }
     return;
   }
@@ -590,6 +601,50 @@ async function commandTask(project, args, globals) {
     const id = rest[0];
     if (!id) throw new VibeError('Usage: vibeguard task verify <id>');
     await runVerification(project, id, globals);
+    return;
+  }
+
+  if (sub === 'evidence') {
+    const { values, positionals } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: {
+        type: { type: 'string' },
+        ref: { type: 'string' },
+        note: { type: 'string' }
+      }
+    });
+    const id = positionals[0];
+    if (!id) throw new VibeError('Usage: vibeguard task evidence <id> [A1] ["bukti"]');
+    const criterion = positionals[1];
+    if (!criterion) {
+      const tasks = await listTasks(project);
+      const task = tasks.find((item) => item.id.toLowerCase() === id.toLowerCase());
+      if (!task) throw new VibeError(`Task tidak ditemukan: ${id}`);
+      if (globals.json) jsonOut({ task: task.id, criteria: task.criteria });
+      else {
+        out(`Evidence ${task.id}: ${task.criteria.filter((item) => item.proven).length}/${task.criteria.length} proven`);
+        for (const item of task.criteria) {
+          out(`  [${item.id}] ${item.proven ? 'proven' : 'unproven'} — ${item.text}`);
+          if (item.evidence) out(`        ${item.evidence.type}: ${item.evidence.note}${item.evidence.ref ? ` (${item.evidence.ref})` : ''}`);
+        }
+      }
+      return;
+    }
+    const note = values.note || positionals.slice(2).join(' ').trim();
+    const result = await recordEvidence(project, id, {
+      criterion,
+      note,
+      type: values.type,
+      ref: values.ref
+    });
+    if (globals.json) jsonOut(result);
+    else {
+      out(`Bukti dicatat untuk ${result.criterion.id} (${result.task.id}).`);
+      out(`  ${result.criterion.evidence.type}: ${result.criterion.evidence.note}`);
+      const progress = result.task.evidenceProgress;
+      out(`  Evidence: ${progress.proven}/${progress.total} criteria proven.`);
+    }
     return;
   }
 

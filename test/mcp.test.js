@@ -83,6 +83,7 @@ test('MCP handshake, tool list, status and task creation', async (t) => {
     'vibeguard_get_next_task',
     'vibeguard_get_context',
     'vibeguard_verify_task',
+    'vibeguard_record_evidence',
     'vibeguard_complete_task',
     'vibeguard_add_task'
   ]) {
@@ -148,6 +149,19 @@ test('MCP handshake, tool list, status and task creation', async (t) => {
   }
   assert.ok(verification, 'async verification did not finish');
   assert.equal(verification.ok, true, verification.summary);
+  assert.equal(verification.criteriaOk, false);
+
+  const evidence = await client.request('tools/call', {
+    name: 'vibeguard_record_evidence',
+    arguments: {
+      taskId: 'T-001',
+      criterion: 'A1',
+      note: 'Task was created through MCP and verification passed',
+      type: 'test'
+    }
+  });
+  assert.equal(evidence.result.isError, undefined);
+  assert.equal(evidence.result.structuredContent.criterion.proven, true);
 
   const complete = await client.request('tools/call', {
     name: 'vibeguard_complete_task',

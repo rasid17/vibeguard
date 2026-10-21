@@ -9,6 +9,7 @@ import {
   saveTasksFile
 } from './store.js';
 import { checkSpec } from './spec.js';
+import { containsSecretValue } from './secrets.js';
 
 function toStringList(value) {
   if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
@@ -16,6 +17,32 @@ function toStringList(value) {
     return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
   }
   return [];
+}
+
+export function criteriaFor(task) {
+  const evidence = task?.evidence && typeof task.evidence === 'object' ? task.evidence : {};
+  return (task?.acceptance || []).map((text, index) => {
+    const id = `A${index + 1}`;
+    const entry = evidence[id];
+    const proven = Boolean(entry && typeof entry.note === 'string' && entry.note.trim());
+    return { id, text, proven, evidence: proven ? entry : null };
+  });
+}
+
+export function evidenceProgress(task) {
+  const criteria = criteriaFor(task);
+  return {
+    proven: criteria.filter((criterion) => criterion.proven).length,
+    total: criteria.length
+  };
+}
+
+function decorateTask(task) {
+  return {
+    ...task,
+    criteria: criteriaFor(task),
+    evidenceProgress: evidenceProgress(task)
+  };
 }
 
 export function isReady(task, byId) {
@@ -80,7 +107,9 @@ export function nextSelection(tasks) {
 export async function getNextTask(project) {
   const data = await loadTasksFile(project);
   const tasks = data.tasks.map(normalizeTask);
-  return nextSelection(tasks);
+  const selection = nextSelection(tasks);
+  if (selection.task) selection.task = decorateTask(selection.task);
+  return selection;
 }
 
 export async function listTasks(project) {
@@ -88,7 +117,7 @@ export async function listTasks(project) {
   const tasks = data.tasks.map(normalizeTask);
   const byId = new Map(tasks.map((task) => [task.id, task]));
   return tasks
-    .map((task) => ({
+    .map((task) => decorateTask({
       ...task,
       blockers: blockersFor(task, byId),
       ready: task.status === 'pending' || task.status === 'failed' ? blockersFor(task, byId).length === 0 : false
@@ -166,7 +195,7 @@ export async function startTask(project, taskId, options = {}) {
     if (current.status === 'verifying') current.status = 'in_progress';
     current.updatedAt = nowIso();
     await saveTask(project, data, current);
-    return { task: current, checkpoint: null, resumed: true };
+    return { task: decorateTask(current), checkpoint: null, resumed: true };
   }
 
   const byId = new Map(tasks.map((item) => [item.id, item]));
@@ -192,12 +221,14 @@ export async function startTask(project, taskId, options = {}) {
   }
 
   current.contract = contractHash(await loadSpec(project), current);
+  current.evidence = {};
+  current.verification = null;
   current.status = 'in_progress';
   current.startedAt = current.startedAt || nowIso();
   current.attempts += 1;
   current.updatedAt = nowIso();
   await saveTask(project, data, current);
-  return { task: current, checkpoint, resumed: false };
+  return { task: decorateTask(current), checkpoint, resumed: false };
 }
 
 export async function completeTask(project, taskId) {
@@ -240,6 +271,15 @@ export async function completeTask(project, taskId) {
     }
   }
 
+  if (config.verification.requireEvidence !== false) {
+    const missing = criteriaFor(current).filter((criterion) => !criterion.proven);
+    if (missing.length > 0) {
+      throw new VibeError(`Bukti untuk ${missing.length} acceptance criterion belum dicatat.`, {
+        hint: `Catat bukti per criterion: ${missing.map((criterion) => `${criterion.id} (${criterion.text})`).join('; ')}`
+      });
+    }
+  }
+
   current.status = 'done';
   current.completedAt = nowIso();
   current.updatedAt = nowIso();
@@ -262,6 +302,57 @@ export async function failTask(project, taskId, reason) {
   current.notes.push({ at: nowIso(), type: 'fail', text: message });
   await saveTask(project, data, current);
   return current;
+}
+
+export async function recordEvidence(project, taskId, input = {}) {
+  const rawCriterion = String(input.criterion ?? input.criterionId ?? '').trim();
+  const match = rawCriterion.match(/^(?:A)?(\d+)$/i);
+  if (!match) throw new VibeError('Criterion tidak valid. Gunakan ID seperti A1 atau angka 1.');
+  const index = Number(match[1]) - 1;
+  const note = String(input.note ?? input.evidence ?? '').trim();
+  if (note.length < 5) throw new VibeError('Bukti minimal 5 karakter; tulis test, observasi, atau referensi yang spesifik.');
+  if (note.length > 2000) throw new VibeError('Bukti maksimal 2000 karakter.');
+  const type = String(input.type ?? 'manual').trim().toLowerCase() || 'manual';
+  const allowedTypes = new Set(['test', 'manual', 'screenshot', 'command', 'review', 'other']);
+  if (!allowedTypes.has(type)) {
+    throw new VibeError(`Tipe bukti tidak valid: ${type}`, {
+      hint: `Gunakan salah satu: ${[...allowedTypes].join(', ')}`
+    });
+  }
+  const ref = String(input.ref ?? '').trim();
+  if (ref.length > 500) throw new VibeError('Referensi bukti maksimal 500 karakter.');
+  if (containsSecretValue(note) || containsSecretValue(ref)) {
+    throw new VibeError('Bukti mengandung pola secret. Jangan menyalin token, key, atau credential ke evidence.', {
+      hint: 'Tulis nama test/command atau lokasi bukti, bukan nilai rahasianya.'
+    });
+  }
+
+  const { data, task } = await loadTask(project, taskId);
+  const current = normalizeTask(task);
+  if (!['in_progress', 'verifying'].includes(current.status)) {
+    throw new VibeError(`Task ${current.id} harus aktif sebelum mencatat bukti.`, {
+      hint: 'Jalankan start_task / `vibeguard task start <id>` dulu.'
+    });
+  }
+  const criteria = criteriaFor(current);
+  const criterion = criteria[index];
+  if (!criterion) throw new VibeError(`Criterion ${rawCriterion} tidak ada; task punya ${criteria.length} criteria (A1-A${criteria.length}).`);
+
+  current.evidence = {
+    ...(current.evidence || {}),
+    [criterion.id]: {
+      note,
+      type,
+      ref: ref || null,
+      recordedAt: nowIso()
+    }
+  };
+  current.updatedAt = nowIso();
+  await saveTask(project, data, current);
+  return {
+    task: decorateTask(current),
+    criterion: criteriaFor(current)[index]
+  };
 }
 
 export async function recordVerification(project, taskId, verification) {

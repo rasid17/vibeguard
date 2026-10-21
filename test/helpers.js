@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { initProject, loadConfig, saveConfig, saveSpec } from '../src/store.js';
+import { listTasks, recordEvidence } from '../src/tasks.js';
 
 export function validSpec(name = 'Test Project') {
   return `# Spec — ${name}
@@ -100,4 +101,18 @@ export async function writeFile(project, rel, content) {
   const abs = path.join(project, rel);
   await fs.mkdir(path.dirname(abs), { recursive: true });
   await fs.writeFile(abs, content);
+}
+
+export async function proveTask(project, taskId, note = 'Verified by test') {
+  const task = (await listTasks(project)).find((item) => item.id === taskId);
+  if (!task) throw new Error(`Task not found: ${taskId}`);
+  for (const criterion of task.criteria) {
+    await recordEvidence(project, taskId, {
+      criterion: criterion.id,
+      note: `${note} (${criterion.id})`,
+      type: 'test',
+      ref: 'test/helpers.js'
+    });
+  }
+  return task;
 }

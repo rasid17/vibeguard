@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 export const VG_DIR = '.vibeguard';
 
 export const TEXT_EXTENSIONS = new Set([

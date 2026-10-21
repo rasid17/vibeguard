@@ -179,6 +179,14 @@ h3 { font-size: 13px; letter-spacing: .01em; margin: 0 0 8px; }
 ul.clean { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
 ul.clean li { display: flex; gap: 8px; align-items: flex-start; color: #c8d5e2; }
 .checkbox { width: 13px; height: 13px; border: 1px solid #405467; border-radius: 4px; flex: none; margin-top: 3px; }
+.criterion-list { display: flex; flex-direction: column; gap: 9px; }
+.criterion-item { border: 1px solid var(--border-soft); border-radius: 9px; padding: 10px; background: rgba(8, 13, 18, .35); }
+.criterion-head { display: flex; align-items: flex-start; gap: 8px; }
+.criterion-id { font-family: var(--mono); font-size: 10px; color: var(--faint); border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 5px; flex: none; margin-top: 2px; }
+.criterion-text { flex: 1; color: #c8d5e2; }
+.criterion-actions { margin-top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.evidence-note { margin-top: 8px; font-size: 11.5px; color: var(--muted); border-left: 2px solid var(--border); padding-left: 8px; line-height: 1.55; }
+.evidence-note strong { color: #cbd8e5; font-weight: 600; }
 .mono { font-family: var(--mono); font-size: 11.5px; color: #a9bbcd; word-break: break-word; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font-family: var(--mono); font-size: 10.5px; color: #a8bbce; background: #0d151d; border: 1px solid var(--border-soft); padding: 2px 6px; border-radius: 5px; }
@@ -187,7 +195,7 @@ ul.clean li { display: flex; gap: 8px; align-items: flex-start; color: #c8d5e2; 
 .alert.bad { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.06); color: #fecaca; }
 .alert.good { border-color: rgba(74,222,128,.3); background: rgba(74,222,128,.06); color: #bbf7d0; }
 .verify-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.result-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin-top: 10px; }
+.result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 8px; margin-top: 10px; }
 .stat { border: 1px solid var(--border-soft); background: #0b131a; border-radius: 8px; padding: 8px 10px; }
 .stat-value { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
 .stat-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
@@ -400,6 +408,43 @@ pre.code {
   </form>
 </dialog>
 
+<dialog class="dialog" id="evidenceDialog">
+  <form method="dialog" id="evidenceForm">
+    <div class="dialog-body">
+      <div class="dialog-head">
+        <div class="dialog-title" id="evidenceTitle">Catat bukti</div>
+        <button class="btn small ghost" value="cancel" formnovalidate>Tutup</button>
+      </div>
+      <div class="alert" id="evidenceCriterion" style="margin-bottom:14px"></div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="evidenceType">Tipe bukti</label>
+          <select id="evidenceType">
+            <option value="test" selected>test</option>
+            <option value="manual">manual</option>
+            <option value="screenshot">screenshot</option>
+            <option value="command">command</option>
+            <option value="review">review</option>
+            <option value="other">other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="evidenceRef">Referensi (opsional)</label>
+          <input id="evidenceRef" placeholder="test/auth.test.ts > login valid, atau path screenshot">
+        </div>
+        <div class="field">
+          <label for="evidenceNote">Bukti</label>
+          <textarea id="evidenceNote" required placeholder="Apa yang membuktikan criterion ini? Sebut test, observasi, atau langkah manual yang spesifik."></textarea>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn" value="cancel" formnovalidate>Batal</button>
+        <button class="btn primary" id="evidenceSubmit" value="default">Simpan bukti</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
 <dialog class="dialog" id="checkpointDialog">
   <div class="dialog-body">
     <div class="dialog-head">
@@ -491,6 +536,15 @@ function visibleTasks() {
 function nextCheckpoint() {
   return state.data?.next?.checkpoint || null;
 }
+function criteriaForTask(task) {
+  if (Array.isArray(task.criteria) && task.criteria.length === (task.acceptance || []).length) return task.criteria;
+  const evidenceMap = task.evidence || {};
+  return (task.acceptance || []).map((text, index) => {
+    const id = `A${index + 1}`;
+    const evidence = evidenceMap[id] || null;
+    return { id, text, proven: Boolean(evidence && evidence.note), evidence };
+  });
+}
 
 function renderTop() {
   const data = state.data;
@@ -523,6 +577,7 @@ function renderTaskList() {
   container.innerHTML = tasks.map((task) => {
     const active = task.id === state.selectedId ? ' active' : '';
     const verify = task.verification ? (task.verification.ok ? 'verify pass' : 'verify fail') : '';
+    const progress = task.evidenceProgress || { proven: 0, total: (task.criteria || []).length };
     return `<button class="task-item${active}" data-task="${esc(task.id)}">
       <div class="task-item-top">
         <span class="dot ${esc(task.status)}"></span>
@@ -532,6 +587,7 @@ function renderTaskList() {
       <div class="task-item-meta">
         <span class="mini">${esc(task.layer)}</span>
         <span class="mini">phase ${esc(task.phase)}</span>
+        ${progress.total ? `<span class="mini">${esc(progress.proven)}/${esc(progress.total)} evidence</span>` : ''}
         ${task.blockers && task.blockers.length ? `<span class="mini">blocked ${esc(task.blockers.join(', '))}</span>` : ''}
         ${verify ? `<span class="mini">${verify}</span>` : ''}
       </div>
@@ -609,6 +665,10 @@ function renderTask(task) {
   const canStart = ['pending', 'failed'].includes(task.status);
   const canVerify = ['in_progress', 'verifying'].includes(task.status);
   const canFail = ['in_progress', 'verifying', 'failed'].includes(task.status);
+  const canEvidence = ['in_progress', 'verifying'].includes(task.status);
+  const criteria = criteriaForTask(task);
+  const provenCount = criteria.filter((criterion) => criterion.proven).length;
+  const criteriaOk = criteria.length > 0 && provenCount === criteria.length;
   const isNext = state.data.next?.task?.id === task.id;
   return `
     <div class="task-head">
@@ -620,6 +680,7 @@ function renderTask(task) {
           <span class="badge muted">phase ${esc(task.phase)}</span>
           ${isNext ? '<span class="badge ok">next</span>' : ''}
           ${verifyOk ? '<span class="badge ok">verified</span>' : task.verification ? '<span class="badge bad">verify failed</span>' : ''}
+          ${criteria.length ? `<span class="badge ${criteriaOk ? 'ok' : 'warn'}">evidence ${provenCount}/${criteria.length}</span>` : ''}
         </div>
         <h1>${esc(task.title)}</h1>
         ${task.description ? `<p class="desc">${esc(task.description)}</p>` : ''}
@@ -627,7 +688,7 @@ function renderTask(task) {
       <div class="actions">
         <button class="btn blue" id="actionStart" ${!canStart || busy ? 'disabled' : ''}>${busy?.action === 'start' ? '<span class="spinner"></span> Mulai' : 'Mulai'}</button>
         <button class="btn" id="actionVerify" ${!canVerify || busy ? 'disabled' : ''}>${busy?.action === 'verify' ? `<span class="spinner"></span> Verifikasi ${busy.elapsed || ''}` : 'Verifikasi'}</button>
-        <button class="btn primary" id="actionComplete" ${!canVerify || busy || !verifyOk ? 'disabled' : ''} title="${verifyOk ? '' : 'Butuh verifikasi lulus'}">Complete</button>
+        <button class="btn primary" id="actionComplete" ${!canVerify || busy || !verifyOk || !criteriaOk ? 'disabled' : ''} title="${!verifyOk ? 'Butuh verifikasi lulus' : !criteriaOk ? 'Lengkapi bukti acceptance criteria' : ''}">Complete</button>
         <button class="btn danger" id="actionFail" ${!canFail || busy ? 'disabled' : ''}>Gagal</button>
       </div>
     </div>
@@ -636,10 +697,20 @@ function renderTask(task) {
 
     <div class="grid">
       <div class="card">
-        <div class="card-label">Acceptance criteria</div>
-        <ul class="clean">
-          ${task.acceptance.length ? task.acceptance.map((item) => `<li><span class="checkbox"></span><span>${esc(item)}</span></li>`).join('') : '<li class="note">Tidak ada. Ini seharusnya tidak terjadi.</li>'}
-        </ul>
+        <div class="card-label">Acceptance criteria · ${provenCount}/${criteria.length} proven</div>
+        ${criteria.length ? `<div class="criterion-list">
+          ${criteria.map((criterion) => `<div class="criterion-item">
+            <div class="criterion-head">
+              <span class="criterion-id">${esc(criterion.id)}</span>
+              <span class="criterion-text">${esc(criterion.text)}</span>
+              <span class="badge ${criterion.proven ? 'ok' : 'warn'}">${criterion.proven ? 'proven' : 'unproven'}</span>
+            </div>
+            ${criterion.evidence ? `<div class="evidence-note"><strong>${esc(criterion.evidence.type)}</strong> · ${esc(criterion.evidence.note)}${criterion.evidence.ref ? `<br><span class="mono">${esc(criterion.evidence.ref)}</span>` : ''}</div>` : ''}
+            <div class="criterion-actions">
+              <button class="btn small ${criterion.proven ? 'ghost' : 'primary'}" data-evidence="${esc(criterion.id)}" ${canEvidence ? '' : 'disabled'} title="${canEvidence ? '' : 'Task harus aktif untuk mencatat bukti'}">${criterion.proven ? 'Perbarui bukti' : 'Catat bukti'}</button>
+            </div>
+          </div>`).join('')}
+        </div>` : '<div class="note">Tidak ada acceptance criteria.</div>'}
       </div>
       <div class="card">
         <div class="card-label">Scope & dependency</div>
@@ -675,6 +746,9 @@ function renderVerification(task) {
     return `<div class="verify-row"><span class="note">Belum ada bukti verifikasi. Jalankan Verifikasi setelah implementasi.</span><span class="badge muted">unverified</span></div>`;
   }
   const summary = verification.summary || {};
+  const criteria = criteriaForTask(task);
+  const criteriaProven = criteria.filter((criterion) => criterion.proven).length;
+  const criteriaTotal = criteria.length;
   return `<div class="verify-row">
     <div>
       <span class="badge ${verification.ok ? 'ok' : 'bad'}">${verification.ok ? 'verification passed' : 'verification failed'}</span>
@@ -686,6 +760,8 @@ function renderVerification(task) {
     <div class="stat"><div class="stat-value">${esc(summary.commands ?? 0)}</div><div class="stat-label">commands</div></div>
     <div class="stat"><div class="stat-value">${esc(summary.failedCommands?.length ?? 0)}</div><div class="stat-label">failed</div></div>
     <div class="stat"><div class="stat-value">${esc(summary.slopErrors ?? 0)}</div><div class="stat-label">slop errors</div></div>
+    <div class="stat"><div class="stat-value">${esc(summary.secretFindings ?? 0)}</div><div class="stat-label">secret findings</div></div>
+    <div class="stat"><div class="stat-value">${esc(criteriaProven)}/${esc(criteriaTotal)}</div><div class="stat-label">evidence</div></div>
     <div class="stat"><div class="stat-value">${esc(summary.scopeViolations ?? 0)}</div><div class="stat-label">scope violations</div></div>
   </div>`;
 }
@@ -697,6 +773,13 @@ function bindTaskActions(task) {
   document.getElementById('actionFail')?.addEventListener('click', () => openFailDialog(task));
   document.getElementById('loadEvidence')?.addEventListener('click', () => loadEvidence(task));
   document.getElementById('loadContext')?.addEventListener('click', () => loadContext(task));
+  const criteria = criteriaForTask(task);
+  document.querySelectorAll('[data-evidence]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const criterion = criteria.find((item) => item.id === button.getAttribute('data-evidence'));
+      if (criterion) openEvidenceDialog(task, criterion);
+    });
+  });
   if (state.evidence) renderEvidence();
   if (state.context) renderContext();
 }
@@ -813,6 +896,7 @@ function renderEvidence() {
     </div>`).join('')}
     ${result.slop?.errors?.length ? `<div class="alert bad" style="margin-top:10px"><strong>Slop errors</strong>${result.slop.errors.map((finding) => `<div class="mono">${esc(finding.file)}:${esc(finding.line)} [${esc(finding.pattern)}] ${esc(finding.excerpt)}</div>`).join('')}</div>` : ''}
     ${result.slop?.warnings?.length ? `<div class="alert" style="margin-top:10px"><strong>Slop warnings</strong>${result.slop.warnings.slice(0, 12).map((finding) => `<div class="mono">${esc(finding.file)}:${esc(finding.line)} [${esc(finding.pattern)}]</div>`).join('')}</div>` : ''}
+    ${result.secrets?.findings?.length ? `<div class="alert bad" style="margin-top:10px"><strong>Secret findings</strong>${result.secrets.findings.slice(0, 20).map((finding) => `<div class="mono">${esc(finding.file)}:${esc(finding.line)} [${esc(finding.type)}] ${esc(finding.excerpt)}</div>`).join('')}</div>` : ''}
     ${result.scope?.violations?.length ? `<div class="alert bad" style="margin-top:10px"><strong>Scope violations</strong><div class="mono">${esc(result.scope.violations.join(', '))}</div></div>` : ''}
   `;
   area.querySelectorAll('[data-log]').forEach((button) => {
@@ -965,6 +1049,18 @@ function inline(text) {
   return value;
 }
 
+function openEvidenceDialog(task, criterion) {
+  const dialog = document.getElementById('evidenceDialog');
+  dialog.dataset.task = task.id;
+  dialog.dataset.criterion = criterion.id;
+  document.getElementById('evidenceTitle').textContent = `Bukti ${criterion.id}`;
+  document.getElementById('evidenceCriterion').textContent = criterion.text;
+  document.getElementById('evidenceType').value = criterion.evidence?.type || 'test';
+  document.getElementById('evidenceRef').value = criterion.evidence?.ref || '';
+  document.getElementById('evidenceNote').value = criterion.evidence?.note || '';
+  dialog.showModal();
+}
+
 function showCheckpointDialog(data) {
   const dialog = document.getElementById('checkpointDialog');
   document.getElementById('checkpointText').textContent = `${data.checkpoint.reason} ${data.hint || ''}`;
@@ -1021,6 +1117,36 @@ document.getElementById('addForm').addEventListener('submit', async (event) => {
     document.getElementById('addDialog').close();
     toast(`${result.task.id} ditambahkan.`, 'good');
     state.selectedId = result.task.id;
+    await loadState({ keepSelection: true });
+  } catch (error) {
+    toast(error.message, 'bad');
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+document.getElementById('evidenceForm').addEventListener('submit', async (event) => {
+  if (event.submitter?.value === 'cancel') return;
+  event.preventDefault();
+  const dialog = document.getElementById('evidenceDialog');
+  const taskId = dialog.dataset.task;
+  const criterion = dialog.dataset.criterion;
+  const note = document.getElementById('evidenceNote').value.trim();
+  if (!note) { toast('Isi bukti terlebih dahulu.', 'bad'); return; }
+  const submit = document.getElementById('evidenceSubmit');
+  submit.disabled = true;
+  try {
+    await api(`/api/tasks/${encodeURIComponent(taskId)}/evidence`, {
+      method: 'POST',
+      body: JSON.stringify({
+        criterion,
+        note,
+        type: document.getElementById('evidenceType').value,
+        ref: document.getElementById('evidenceRef').value.trim()
+      })
+    });
+    dialog.close();
+    toast(`Bukti ${criterion} tersimpan.`, 'good');
     await loadState({ keepSelection: true });
   } catch (error) {
     toast(error.message, 'bad');

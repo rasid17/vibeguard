@@ -75,7 +75,28 @@ test('CLI init, spec validation and task creation', async (t) => {
   assert.match(next.stdout, /T-001/);
   assert.match(next.stdout, /CLI task/);
 
+  const evidenceList = await runCli(project, ['task', 'evidence', 'T-001']);
+  assert.equal(evidenceList.code, 0);
+  assert.match(evidenceList.stdout, /A1/);
+  assert.match(evidenceList.stdout, /unproven/);
+
+  const start = await runCli(project, ['task', 'start', 'T-001']);
+  assert.equal(start.code, 0, start.stderr);
+
+  const evidence = await runCli(project, ['task', 'evidence', 'T-001', 'A1', 'Observed the build check pass', '--type', 'manual']);
+  assert.equal(evidence.code, 0, evidence.stderr);
+  assert.match(evidence.stdout, /1\/1 criteria proven/);
+
+  const verify = await runCli(project, ['task', 'verify', 'T-001']);
+  assert.equal(verify.code, 0, verify.stderr);
+  assert.match(verify.stdout, /VERIFIKASI LULUS/);
+
+  const done = await runCli(project, ['task', 'done', 'T-001']);
+  assert.equal(done.code, 0, done.stderr);
+  assert.match(done.stdout, /selesai/);
+
   const state = JSON.parse(await fs.readFile(path.join(project, '.vibeguard', 'tasks.json'), 'utf8'));
   assert.equal(state.tasks.length, 1);
-  assert.equal(state.tasks[0].status, 'pending');
+  assert.equal(state.tasks[0].status, 'done');
+  assert.equal(state.tasks[0].evidence.A1.type, 'manual');
 });

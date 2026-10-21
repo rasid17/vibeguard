@@ -25,7 +25,8 @@ import {
 } from './util.js';
 import { loadConfig, loadSpec, loadTask } from './store.js';
 import { checkSpec } from './spec.js';
-import { beginVerification, recordVerification } from './tasks.js';
+import { scanSecrets } from './secrets.js';
+import { beginVerification, criteriaFor, recordVerification } from './tasks.js';
 
 function matcherFor(pattern) {
   const value = String(pattern);
@@ -197,10 +198,13 @@ export async function verifyTask(project, taskId, options = {}) {
   const startedAt = nowIso();
   const commandResults = [];
   const slop = await scanSlop(project, config, changedFiles);
+  const secrets = await scanSecrets(project, config, changedFiles);
   const scope = await checkScope(activeTask, config, changedFiles);
+  const criteria = criteriaFor(activeTask);
+  const criteriaOk = criteria.every((criterion) => criterion.proven);
   const commands = Array.isArray(config.verification?.commands) ? config.verification.commands : [];
 
-  options.onProgress?.({ type: 'scan', slop, scope });
+  options.onProgress?.({ type: 'scan', slop, secrets, scope, criteria });
 
   for (let index = 0; index < commands.length; index += 1) {
     const command = commands[index];
@@ -250,6 +254,7 @@ export async function verifyTask(project, taskId, options = {}) {
   const ok = !noCommands
     && failedCommands.length === 0
     && slop.ok
+    && secrets.ok
     && specCheck.ok
     && (!config.verification?.strictScope || scope.ok);
 
@@ -266,7 +271,10 @@ export async function verifyTask(project, taskId, options = {}) {
     commands: commandResults,
     failedCommands: failedCommands.map((entry) => entry.name),
     slop,
+    secrets,
     scope,
+    criteria,
+    criteriaOk,
     spec: {
       ok: specCheck.ok,
       missing: specCheck.missing,
@@ -290,8 +298,11 @@ export async function verifyTask(project, taskId, options = {}) {
       failedCommands: failedCommands.map((entry) => entry.name),
       slopErrors: slop.errors.length,
       slopWarnings: slop.warnings.length,
+      secretFindings: secrets.findings.length,
       scopeViolations: scope.violations.length,
       specOk: specCheck.ok,
+      criteriaTotal: criteria.length,
+      criteriaProven: criteria.filter((criterion) => criterion.proven).length,
       strictScope: Boolean(config.verification?.strictScope)
     }
   };
@@ -339,6 +350,16 @@ export function summarizeVerificationResult(result) {
     for (const finding of result.slop.errors.slice(0, 10)) {
       lines.push(`  ${finding.file}:${finding.line} [${finding.pattern}] ${finding.excerpt}`);
     }
+  }
+  if (!result.secrets?.ok) {
+    lines.push(`Secret findings: ${result.secrets.findings.length}`);
+    for (const finding of result.secrets.findings.slice(0, 10)) {
+      lines.push(`  ${finding.file}:${finding.line} [${finding.type}] ${finding.excerpt}`);
+    }
+  }
+  if (result.criteria && result.criteria.length > 0 && !result.criteria.every((criterion) => criterion.proven)) {
+    const missing = result.criteria.filter((criterion) => !criterion.proven).map((criterion) => criterion.id);
+    lines.push(`Acceptance evidence: ${result.criteria.filter((criterion) => criterion.proven).length}/${result.criteria.length} proven; missing ${missing.join(', ')}`);
   }
   if (result.scope?.violations?.length) {
     lines.push(`Scope violations: ${result.scope.violations.join(', ')}`);
