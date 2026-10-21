@@ -88,6 +88,54 @@ vibeguard ui
 
 Dashboard listen di `127.0.0.1` dan memakai token acak per proses.
 
+## Mode diskusi: ide sebelum spec
+
+VibeGuard sengaja tidak punya agent atau LLM. Diskusi dua arah tetap dilakukan di Claude Code, Cursor, ChatGPT, atau agent lain. Selama fase diskusi, belum ada verifikasi yang berjalan dan spec boleh masih berupa draft. Gate pertama berlaku saat Anda mulai menambah task: `task add` mewajibkan spec yang valid.
+
+Alur yang disarankan:
+
+```sh
+cd ~/project
+vibeguard plan "Ide: aplikasi ..."
+```
+
+Command ini menulis `.vibeguard/brief.md` dan mencetak prompt. Buka agent di folder project, lalu tempel prompt diskusi:
+
+```text
+Baca .vibeguard/brief.md, .vibeguard/spec.md, dan AGENTS.md.
+Kita masih fase diskusi. JANGAN menulis kode, JANGAN menambah task,
+dan JANGAN memanggil tool task/verify.
+
+Bantu saya mengeksplorasi ide ini:
+1. Ulangi pemahamanmu tentang masalah dan target pengguna.
+2. Ajukan maksimal 5 pertanyaan yang benar-benar mengubah keputusan.
+3. Bandingkan minimal 3 opsi pendekatan, dengan trade-off masing-masing.
+4. Sebutkan non-goals, risiko, dan asumsi yang perlu diuji.
+5. Rekomendasikan satu opsi dan jelaskan alasannya.
+
+Setelah saya bilang "capture", tulis hasil diskusi ke .vibeguard/spec.md
+(problem, goals, non-goals, users, requirements, acceptance criteria,
+technical notes, risks, open questions). Simpan keputusan dan opsi yang
+ditolak di bagian Technical notes. Hapus semua komentar template/TODO,
+lalu jalankan `vibeguard spec check`.
+```
+
+Setelah diskusi selesai dan Anda setuju dengan arahannya:
+
+```sh
+vibeguard spec check
+vibeguard task add "..." --criteria "..." --files "..." --layer frontend --phase 1
+# atau minta agent menambahkan task lewat MCP
+```
+
+Catatan:
+
+- Jangan menyimpan transkrip chat ke VibeGuard; simpan keputusan dan alasannya di spec. VibeGuard adalah tempat membekukan keputusan, bukan arsip percakapan.
+- Taruh keputusan penting di `## Technical notes` atau `## Open questions`. Saat ini context pack mengambil bagian inti spec; bagian tambahan seperti `## Decision` belum tentu ikut ke task berikutnya.
+- Untuk agent yang hanya bisa chat di browser dan tidak bisa membaca repo, salin isi spec secara manual. Verifikasi lokal, secret scan, dan evidence tetap harus dijalankan dari repo.
+- Untuk pendapat kedua, `delegate.sh plan` atau `review` dari `orchestra-kit` bisa dipakai sebagai one-shot reviewer, bukan pengganti diskusi dua arah.
+- Jangan masuk ke loop implementasi sebelum non-goals dan acceptance criteria cukup jelas. Gate pertama adalah `task add`; setelah task ada, verifikasi, scope, dan evidence mulai mengikat.
+
 ## Loop kerja
 
 ### Lewat coding agent + MCP
