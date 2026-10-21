@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+*.log
+
+# local VibeGuard state for this repository
+.vibeguard/
+.mcp.json
+.cursor/mcp.json

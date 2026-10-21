@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>VibeGuard</title>
+<style>
+:root {
+  --bg: #0a0f14;
+  --bg-2: #0d141b;
+  --panel: #111a23;
+  --panel-2: #15212c;
+  --border: #213140;
+  --border-soft: #1a2835;
+  --text: #e7eef5;
+  --muted: #8ea1b5;
+  --faint: #5f7388;
+  --accent: #4ade80;
+  --accent-2: #22c55e;
+  --blue: #60a5fa;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(900px 500px at 85% -10%, rgba(74, 222, 128, .07), transparent 60%),
+    radial-gradient(700px 400px at 0% 0%, rgba(96, 165, 250, .05), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.hidden { display: none !important; }
+.topbar {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-soft);
+  background: rgba(10, 15, 20, .82);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo {
+  width: 32px; height: 32px; border-radius: 9px;
+  display: grid; place-items: center;
+  background: linear-gradient(145deg, rgba(74,222,128,.2), rgba(34,197,94,.04));
+  border: 1px solid rgba(74,222,128,.35);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: .5px;
+  flex: none;
+}
+.brand-title { font-weight: 700; letter-spacing: -.01em; }
+.brand-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px; border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge.ok { color: var(--accent); border-color: rgba(74,222,128,.3); background: rgba(74,222,128,.06); }
+.badge.warn { color: var(--amber); border-color: rgba(251,191,36,.3); background: rgba(251,191,36,.06); }
+.badge.bad { color: var(--red); border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.06); }
+.badge.muted { color: var(--muted); }
+.layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+  max-width: 1560px;
+  margin: 0 auto;
+  min-height: calc(100vh - 60px);
+  align-items: start;
+}
+.sidebar { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 78px; height: calc(100vh - 96px); overflow: hidden; }
+.panel {
+  background: linear-gradient(180deg, rgba(21,33,44,.72), rgba(17,26,35,.92));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.18);
+}
+.progress-card { padding: 16px; }
+.progress-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.progress-value { font-size: 22px; font-weight: 700; letter-spacing: -.03em; }
+.progress-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
+.progress-track { height: 7px; border-radius: 999px; background: #0b131a; overflow: hidden; border: 1px solid var(--border-soft); }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); border-radius: 999px; transition: width .35s ease; }
+.progress-meta { margin-top: 9px; display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.side-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; border-bottom: 1px solid var(--border-soft); }
+.side-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+.filters { display: flex; gap: 4px; padding: 10px 12px 6px; }
+.filter {
+  border: 1px solid transparent; background: transparent; color: var(--muted);
+  padding: 4px 9px; border-radius: 7px; font-size: 11px; font-weight: 600;
+}
+.filter.active { color: var(--text); border-color: var(--border); background: var(--panel-2); }
+.task-list { overflow-y: auto; padding: 4px 8px 10px; flex: 1; min-height: 120px; }
+.task-item {
+  width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
+  border-radius: 10px; padding: 10px 10px; display: flex; flex-direction: column; gap: 6px;
+  color: var(--text); transition: background .15s, border-color .15s;
+}
+.task-item:hover { background: rgba(255,255,255,.03); border-color: var(--border-soft); }
+.task-item.active { background: rgba(74,222,128,.06); border-color: rgba(74,222,128,.25); }
+.task-item-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.task-id { font-family: var(--mono); font-size: 10px; color: var(--faint); flex: none; }
+.task-title { font-size: 12.5px; font-weight: 600; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.task-item-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dot { width: 6px; height: 6px; border-radius: 999px; flex: none; background: var(--faint); }
+.dot.pending { background: #64748b; }
+.dot.in_progress { background: var(--blue); box-shadow: 0 0 0 3px rgba(96,165,250,.12); }
+.dot.verifying { background: var(--amber); }
+.dot.done { background: var(--accent); }
+.dot.failed { background: var(--red); }
+.mini { font-size: 10px; color: var(--muted); border: 1px solid var(--border-soft); border-radius: 5px; padding: 1px 5px; font-family: var(--mono); }
+.add-wrap { padding: 10px 12px 12px; border-top: 1px solid var(--border-soft); }
+.main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.tabs { display: flex; align-items: center; gap: 4px; }
+.tab {
+  border: 1px solid transparent; background: transparent; color: var(--muted);
+  padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+}
+.tab.active { color: var(--text); border-color: var(--border); background: var(--panel); }
+.main-panel { padding: 22px; }
+.empty { padding: 60px 24px; text-align: center; color: var(--muted); }
+.empty h3 { color: var(--text); margin: 0 0 6px; font-size: 16px; }
+.empty p { margin: 0 0 16px; }
+.task-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.task-kicker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.pill.done { color: var(--accent); border-color: rgba(74,222,128,.3); background: rgba(74,222,128,.06); }
+.pill.in_progress { color: var(--blue); border-color: rgba(96,165,250,.3); background: rgba(96,165,250,.07); }
+.pill.failed { color: var(--red); border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.06); }
+.pill.verifying { color: var(--amber); border-color: rgba(251,191,36,.3); background: rgba(251,191,36,.06); }
+h1 { font-size: 24px; line-height: 1.25; letter-spacing: -.03em; margin: 0 0 8px; font-weight: 700; }
+h2 { font-size: 16px; letter-spacing: -.015em; margin: 0 0 12px; }
+h3 { font-size: 13px; letter-spacing: .01em; margin: 0 0 8px; }
+.desc { color: #b8c6d5; margin: 4px 0 0; max-width: 900px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600;
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.btn:hover:not(:disabled) { background: #1a2a38; border-color: #2b4054; }
+.btn.primary { background: rgba(74,222,128,.13); border-color: rgba(74,222,128,.4); color: #b9f6ce; }
+.btn.primary:hover:not(:disabled) { background: rgba(74,222,128,.2); }
+.btn.blue { background: rgba(96,165,250,.12); border-color: rgba(96,165,250,.36); color: #bfdbfe; }
+.btn.danger { color: #fecaca; border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.07); }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: .42; cursor: not-allowed; }
+.btn.small { padding: 5px 9px; font-size: 11px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 20px; }
+.card { background: rgba(10,16,22,.44); border: 1px solid var(--border-soft); border-radius: 11px; padding: 14px; }
+.card.full { grid-column: 1 / -1; }
+.card-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-bottom: 8px; }
+ul.clean { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+ul.clean li { display: flex; gap: 8px; align-items: flex-start; color: #c8d5e2; }
+.checkbox { width: 13px; height: 13px; border: 1px solid #405467; border-radius: 4px; flex: none; margin-top: 3px; }
+.mono { font-family: var(--mono); font-size: 11.5px; color: #a9bbcd; word-break: break-word; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--mono); font-size: 10.5px; color: #a8bbce; background: #0d151d; border: 1px solid var(--border-soft); padding: 2px 6px; border-radius: 5px; }
+.note { font-size: 12px; color: var(--muted); }
+.alert { border: 1px solid rgba(251,191,36,.3); background: rgba(251,191,36,.06); color: #fde68a; border-radius: 10px; padding: 12px 14px; font-size: 12px; }
+.alert.bad { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.06); color: #fecaca; }
+.alert.good { border-color: rgba(74,222,128,.3); background: rgba(74,222,128,.06); color: #bbf7d0; }
+.verify-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.result-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin-top: 10px; }
+.stat { border: 1px solid var(--border-soft); background: #0b131a; border-radius: 8px; padding: 8px 10px; }
+.stat-value { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+.stat-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+pre.code {
+  background: #080d12; border: 1px solid var(--border-soft); border-radius: 9px;
+  padding: 12px; overflow: auto; max-height: 360px; font-family: var(--mono);
+  font-size: 11px; line-height: 1.55; color: #c3d2e0; white-space: pre-wrap; word-break: break-word;
+}
+.command-row { border: 1px solid var(--border-soft); border-radius: 9px; padding: 10px 12px; margin-top: 8px; background: rgba(8,13,18,.4); }
+.command-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.command-name { font-weight: 600; font-size: 12px; }
+.status-text.pass { color: var(--accent); }
+.status-text.fail { color: var(--red); }
+.spec-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+.spec-doc { min-width: 0; }
+.spec-check { position: sticky; top: 78px; }
+.markdown { color: #cbd8e5; font-size: 13px; line-height: 1.7; }
+.markdown h1 { font-size: 22px; margin: 0 0 12px; }
+.markdown h2 { font-size: 16px; margin: 22px 0 8px; color: #e8f0f7; }
+.markdown h3 { font-size: 14px; margin: 16px 0 6px; color: #dbe7f2; }
+.markdown p { margin: 0 0 10px; }
+.markdown ul, .markdown ol { margin: 0 0 12px; padding-left: 20px; }
+.markdown li { margin: 2px 0; }
+.markdown code { font-family: var(--mono); font-size: 11.5px; background: #0a1218; border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 4px; }
+.markdown pre { background: #080d12; border: 1px solid var(--border-soft); border-radius: 8px; padding: 10px 12px; overflow: auto; }
+.markdown pre code { background: none; border: none; padding: 0; }
+.markdown a { color: var(--blue); }
+.markdown blockquote { margin: 0 0 12px; padding: 6px 12px; border-left: 2px solid var(--border); color: var(--muted); }
+.list-warning { display: flex; flex-direction: column; gap: 6px; }
+.warn-item { font-size: 11.5px; color: #d8c48c; }
+.error-item { font-size: 11.5px; color: #f3b0b0; }
+.dialog {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 14px; padding: 0; width: min(620px, calc(100vw - 32px));
+  box-shadow: 0 30px 90px rgba(0,0,0,.5);
+}
+.dialog::backdrop { background: rgba(2,6,10,.72); backdrop-filter: blur(3px); }
+.dialog-body { padding: 20px; }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.dialog-title { font-size: 16px; font-weight: 700; }
+.form-grid { display: grid; gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.field input, .field textarea, .field select {
+  width: 100%; background: #0a1218; border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12.5px; outline: none;
+}
+.field input:focus, .field textarea:focus, .field select:focus { border-color: rgba(74,222,128,.45); box-shadow: 0 0 0 2px rgba(74,222,128,.1); }
+.field textarea { min-height: 80px; resize: vertical; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.toast {
+  position: fixed; right: 18px; bottom: 18px; z-index: 60;
+  max-width: min(420px, calc(100vw - 36px));
+  border: 1px solid var(--border); background: #111c26; color: var(--text);
+  border-radius: 10px; padding: 11px 14px; font-size: 12.5px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.4); opacity: 0; transform: translateY(8px);
+  transition: opacity .2s, transform .2s; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.bad { border-color: rgba(248,113,113,.35); color: #fecaca; }
+.toast.good { border-color: rgba(74,222,128,.35); color: #bbf7d0; }
+.spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.25); border-top-color: currentColor; border-radius: 999px; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 1040px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; height: auto; max-height: none; overflow: visible; }
+  .task-list { max-height: 260px; }
+  .spec-layout { grid-template-columns: 1fr; }
+  .spec-check { position: static; }
+}
+@media (max-width: 640px) {
+  .layout { padding: 10px; }
+  .main-panel { padding: 16px; }
+  .grid { grid-template-columns: 1fr; }
+  .result-grid { grid-template-columns: 1fr 1fr; }
+  .actions { justify-content: flex-start; }
+  h1 { font-size: 20px; }
+  .brand-sub { display: none; }
+  .field-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">VG</div>
+    <div style="min-width:0">
+      <div class="brand-title">VibeGuard</div>
+      <div class="brand-sub" id="brandSub">local anti-slop harness</div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span class="badge" id="specBadge">spec</span>
+    <span class="badge muted" id="versionBadge"></span>
+    <button class="btn small ghost" id="refreshBtn" title="Muat ulang">Refresh</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <section class="panel progress-card">
+      <div class="progress-head">
+        <div>
+          <div class="progress-label">Progress</div>
+          <div class="progress-value" id="progressValue">0/0</div>
+        </div>
+        <div class="note" id="progressPct">0%</div>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+      <div class="progress-meta">
+        <span id="progressCounts">0 done</span>
+        <span id="progressActive">0 aktif</span>
+      </div>
+    </section>
+
+    <section class="panel" style="display:flex;flex-direction:column;min-height:0;flex:1;overflow:hidden">
+      <div class="side-head">
+        <div class="side-title">Tasks</div>
+        <button class="btn small ghost" id="addTaskBtn">+ Task</button>
+      </div>
+      <div class="filters">
+        <button class="filter active" data-filter="open">Terbuka</button>
+        <button class="filter" data-filter="all">Semua</button>
+        <button class="filter" data-filter="done">Selesai</button>
+      </div>
+      <div class="task-list" id="taskList"></div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div class="tabs">
+      <button class="tab active" data-tab="task" id="tabTask">Task</button>
+      <button class="tab" data-tab="spec" id="tabSpec">Spec</button>
+      <span class="note" id="headerHint" style="margin-left:auto"></span>
+    </div>
+    <section class="panel main-panel" id="mainPanel"></section>
+  </main>
+</div>
+
+<dialog class="dialog" id="addDialog">
+  <form method="dialog" id="addForm">
+    <div class="dialog-body">
+      <div class="dialog-head">
+        <div class="dialog-title">Task baru</div>
+        <button class="btn small ghost" value="cancel" formnovalidate>Tutup</button>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="addTitle">Judul</label>
+          <input id="addTitle" required maxlength="200" placeholder="Contoh: Halaman login dengan email dan password">
+        </div>
+        <div class="field">
+          <label for="addDesc">Deskripsi (opsional)</label>
+          <textarea id="addDesc" placeholder="Batasan, data yang terlibat, edge case penting"></textarea>
+        </div>
+        <div class="field">
+          <label for="addCriteria">Acceptance criteria, satu per baris</label>
+          <textarea id="addCriteria" required placeholder="Login berhasil dengan email/password valid&#10;Pesan error tampil untuk kredensial salah"></textarea>
+        </div>
+        <div class="field">
+          <label for="addFiles">Scope file (pisahkan koma)</label>
+          <input id="addFiles" placeholder="src/app/login/**, src/lib/auth/**">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="addLayer">Layer</label>
+            <select id="addLayer">
+              <option value="frontend">frontend</option>
+              <option value="backend">backend</option>
+              <option value="fullstack">fullstack</option>
+              <option value="data">data</option>
+              <option value="any" selected>any</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="addPhase">Phase</label>
+            <input id="addPhase" value="1" placeholder="1">
+          </div>
+        </div>
+        <div class="field">
+          <label for="addDepends">Depends on (ID task, pisahkan koma)</label>
+          <input id="addDepends" placeholder="T-001, T-002">
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn" value="cancel" formnovalidate>Batal</button>
+        <button class="btn primary" id="addSubmit" value="default">Tambah task</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dialog" id="failDialog">
+  <form method="dialog" id="failForm">
+    <div class="dialog-body">
+      <div class="dialog-head">
+        <div class="dialog-title">Tandai task gagal</div>
+        <button class="btn small ghost" value="cancel" formnovalidate>Tutup</button>
+      </div>
+      <div class="field">
+        <label for="failReason">Alasan</label>
+        <textarea id="failReason" required placeholder="Apa yang blocker? Apa yang sudah dicoba?"></textarea>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn" value="cancel" formnovalidate>Batal</button>
+        <button class="btn danger" id="failSubmit" value="default">Tandai gagal</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dialog" id="checkpointDialog">
+  <div class="dialog-body">
+    <div class="dialog-head">
+      <div class="dialog-title">Checkpoint manusia</div>
+      <button class="btn small ghost" id="checkpointCancel">Tutup</button>
+    </div>
+    <div class="alert" id="checkpointText"></div>
+    <p class="note" style="margin:12px 0 0">Uji hasil task sebelumnya di aplikasi. Jika sudah oke, mulai task berikutnya. Jangan lewati checkpoint hanya karena kode terlihat benar.</p>
+    <div class="dialog-actions">
+      <button class="btn" id="checkpointCancel2">Belum, nanti</button>
+      <button class="btn primary" id="checkpointApprove">Sudah diuji, mulai</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="dialog" id="logDialog" style="width:min(900px,calc(100vw - 32px))">
+  <div class="dialog-body">
+    <div class="dialog-head">
+      <div class="dialog-title" id="logTitle">Log</div>
+      <button class="btn small ghost" id="logClose">Tutup</button>
+    </div>
+    <pre class="code" id="logContent" style="max-height:60vh"></pre>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>window.__VG__ = __VG_BOOTSTRAP__;</script>
+<script>
+const boot = window.__VG__;
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+const fmtDate = (value) => {
+  if (!value) return '-';
+  try { return new Date(value).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }); }
+  catch { return value; }
+};
+const statusLabel = (status) => ({ pending: 'pending', in_progress: 'in progress', verifying: 'verifying', done: 'done', failed: 'failed' }[status] || status);
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function toast(message, tone = '') {
+  toastEl.textContent = message;
+  toastEl.className = 'toast show ' + tone;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.className = 'toast'; }, 4200);
+}
+
+const initialTab = window.location.hash === '#spec' ? 'spec' : 'task';
+const state = {
+  data: null,
+  selectedId: null,
+  tab: initialTab,
+  filter: 'open',
+  busy: null,
+  evidence: null,
+  context: null,
+  checkpoint: null,
+  timer: null
+};
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      'x-vibeguard-token': boot.token,
+      ...(options.body ? { 'content-type': 'application/json' } : {}),
+      ...(options.headers || {})
+    }
+  });
+  const type = response.headers.get('content-type') || '';
+  const data = type.includes('application/json') ? await response.json() : await response.text();
+  if (!response.ok) {
+    const error = new Error(data && data.error ? data.error : (typeof data === 'string' ? data : 'Request gagal'));
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+function allTasks() { return state.data?.tasks || []; }
+function taskById(id) { return allTasks().find((task) => task.id === id); }
+function selectedTask() { return state.selectedId ? taskById(state.selectedId) : null; }
+function visibleTasks() {
+  const tasks = allTasks();
+  if (state.filter === 'done') return tasks.filter((task) => task.status === 'done');
+  if (state.filter === 'open') return tasks.filter((task) => task.status !== 'done');
+  return tasks;
+}
+function nextCheckpoint() {
+  return state.data?.next?.checkpoint || null;
+}
+
+function renderTop() {
+  const data = state.data;
+  if (!data) return;
+  document.getElementById('brandSub').textContent = data.project.path;
+  document.getElementById('versionBadge').textContent = 'v' + data.version;
+  const check = data.spec.check;
+  const badge = document.getElementById('specBadge');
+  badge.textContent = check.ok ? 'spec valid' : 'spec perlu diperbaiki';
+  badge.className = 'badge ' + (check.ok ? 'ok' : 'warn');
+  const counts = data.counts;
+  const pct = counts.total ? Math.round((counts.done / counts.total) * 100) : 0;
+  document.getElementById('progressValue').textContent = `${counts.done}/${counts.total}`;
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressCounts').textContent = `${counts.done} done`;
+  document.getElementById('progressActive').textContent = `${counts.in_progress + counts.verifying} aktif`;
+  document.getElementById('headerHint').textContent = data.config.verification.commands.length
+    ? `${data.config.verification.commands.length} checks`
+    : 'belum ada checks';
+}
+
+function renderTaskList() {
+  const container = document.getElementById('taskList');
+  const tasks = visibleTasks();
+  if (tasks.length === 0) {
+    container.innerHTML = `<div class="empty" style="padding:26px 12px"><p>${state.filter === 'done' ? 'Belum ada task selesai.' : 'Belum ada task. Tambahkan satu task dengan acceptance criteria.'}</p></div>`;
+    return;
+  }
+  container.innerHTML = tasks.map((task) => {
+    const active = task.id === state.selectedId ? ' active' : '';
+    const verify = task.verification ? (task.verification.ok ? 'verify pass' : 'verify fail') : '';
+    return `<button class="task-item${active}" data-task="${esc(task.id)}">
+      <div class="task-item-top">
+        <span class="dot ${esc(task.status)}"></span>
+        <span class="task-id">${esc(task.id)}</span>
+        <span class="task-title">${esc(task.title)}</span>
+      </div>
+      <div class="task-item-meta">
+        <span class="mini">${esc(task.layer)}</span>
+        <span class="mini">phase ${esc(task.phase)}</span>
+        ${task.blockers && task.blockers.length ? `<span class="mini">blocked ${esc(task.blockers.join(', '))}</span>` : ''}
+        ${verify ? `<span class="mini">${verify}</span>` : ''}
+      </div>
+    </button>`;
+  }).join('');
+  container.querySelectorAll('[data-task]').forEach((element) => {
+    element.addEventListener('click', () => {
+      state.selectedId = element.getAttribute('data-task');
+      state.tab = 'task';
+      state.evidence = null;
+      state.context = null;
+      render();
+    });
+  });
+}
+
+function renderTabs() {
+  document.querySelectorAll('[data-tab]').forEach((element) => {
+    element.classList.toggle('active', element.getAttribute('data-tab') === state.tab);
+  });
+}
+
+function render() {
+  if (!state.data) return;
+  if (!state.selectedId) {
+    const preferred = state.data.next?.task?.id || allTasks()[0]?.id || null;
+    state.selectedId = preferred;
+  }
+  renderTop();
+  renderTabs();
+  renderTaskList();
+  const panel = document.getElementById('mainPanel');
+  if (state.tab === 'spec') {
+    panel.innerHTML = renderSpec();
+    bindSpecActions();
+    return;
+  }
+  const task = selectedTask();
+  if (!task) {
+    panel.innerHTML = renderEmpty();
+    bindEmptyActions();
+    return;
+  }
+  panel.innerHTML = renderTask(task);
+  bindTaskActions(task);
+}
+
+function renderEmpty() {
+  return `<div class="empty">
+    <h3>Belum ada task</h3>
+    <p>Mulai dari spec, lalu pecah menjadi task kecil dengan acceptance criteria yang bisa diuji.</p>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button class="btn primary" id="emptyAdd">Tambah task</button>
+      <button class="btn" id="emptySpec">Lihat spec</button>
+    </div>
+  </div>`;
+}
+
+function bindEmptyActions() {
+  document.getElementById('emptyAdd')?.addEventListener('click', openAddDialog);
+  document.getElementById('emptySpec')?.addEventListener('click', () => { state.tab = 'spec'; render(); });
+}
+
+function renderCheckpointAlert(checkpoint) {
+  if (!checkpoint?.needed) return '';
+  return `<div class="alert" style="margin-top:16px">
+    <strong>Checkpoint.</strong> ${esc(checkpoint.reason)}<br>
+    <span class="note">Task sebelumnya: ${esc(checkpoint.from.taskId)} (${esc(checkpoint.from.layer)}, phase ${esc(checkpoint.from.phase)}). Uji dulu sebelum lanjut.</span>
+  </div>`;
+}
+
+function renderTask(task) {
+  const busy = state.busy?.taskId === task.id ? state.busy : null;
+  const verifyOk = task.verification?.ok === true;
+  const canStart = ['pending', 'failed'].includes(task.status);
+  const canVerify = ['in_progress', 'verifying'].includes(task.status);
+  const canFail = ['in_progress', 'verifying', 'failed'].includes(task.status);
+  const isNext = state.data.next?.task?.id === task.id;
+  return `
+    <div class="task-head">
+      <div style="min-width:0;flex:1">
+        <div class="task-kicker">
+          <span class="pill ${esc(task.status)}">${esc(statusLabel(task.status))}</span>
+          <span class="badge">${esc(task.id)}</span>
+          <span class="badge muted">${esc(task.layer)}</span>
+          <span class="badge muted">phase ${esc(task.phase)}</span>
+          ${isNext ? '<span class="badge ok">next</span>' : ''}
+          ${verifyOk ? '<span class="badge ok">verified</span>' : task.verification ? '<span class="badge bad">verify failed</span>' : ''}
+        </div>
+        <h1>${esc(task.title)}</h1>
+        ${task.description ? `<p class="desc">${esc(task.description)}</p>` : ''}
+      </div>
+      <div class="actions">
+        <button class="btn blue" id="actionStart" ${!canStart || busy ? 'disabled' : ''}>${busy?.action === 'start' ? '<span class="spinner"></span> Mulai' : 'Mulai'}</button>
+        <button class="btn" id="actionVerify" ${!canVerify || busy ? 'disabled' : ''}>${busy?.action === 'verify' ? `<span class="spinner"></span> Verifikasi ${busy.elapsed || ''}` : 'Verifikasi'}</button>
+        <button class="btn primary" id="actionComplete" ${!canVerify || busy || !verifyOk ? 'disabled' : ''} title="${verifyOk ? '' : 'Butuh verifikasi lulus'}">Complete</button>
+        <button class="btn danger" id="actionFail" ${!canFail || busy ? 'disabled' : ''}>Gagal</button>
+      </div>
+    </div>
+
+    ${isNext ? renderCheckpointAlert(nextCheckpoint()) : ''}
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-label">Acceptance criteria</div>
+        <ul class="clean">
+          ${task.acceptance.length ? task.acceptance.map((item) => `<li><span class="checkbox"></span><span>${esc(item)}</span></li>`).join('') : '<li class="note">Tidak ada. Ini seharusnya tidak terjadi.</li>'}
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-label">Scope & dependency</div>
+        <div class="chips">
+          ${task.files.length ? task.files.map((file) => `<span class="chip">${esc(file)}</span>`).join('') : '<span class="note">Scope file belum dibatasi.</span>'}
+        </div>
+        ${task.dependsOn.length ? `<div class="card-label" style="margin-top:14px">Depends on</div><div class="chips">${task.dependsOn.map((id) => `<span class="chip">${esc(id)}</span>`).join('')}</div>` : ''}
+        ${task.blockers && task.blockers.length ? `<div class="alert bad" style="margin-top:12px">Menunggu: ${esc(task.blockers.join(', '))}</div>` : ''}
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn small" id="loadContext">Context pack</button>
+          <button class="btn small" id="loadEvidence" ${task.verification ? '' : 'disabled'}>Evidence</button>
+        </div>
+      </div>
+
+      <div class="card full">
+        <div class="card-label">Verifikasi</div>
+        ${renderVerification(task)}
+        <div id="evidenceArea" class="${state.evidence ? '' : 'hidden'}" style="margin-top:12px"></div>
+        <div id="contextArea" class="${state.context ? '' : 'hidden'}" style="margin-top:12px"></div>
+      </div>
+
+      ${task.notes && task.notes.length ? `<div class="card full">
+        <div class="card-label">Catatan</div>
+        <ul class="clean">${task.notes.slice(-6).map((note) => `<li><span class="task-id">${esc(fmtDate(note.at))}</span><span>${esc(note.text)}</span></li>`).join('')}</ul>
+      </div>` : ''}
+    </div>
+  `;
+}
+
+function renderVerification(task) {
+  const verification = task.verification;
+  if (!verification) {
+    return `<div class="verify-row"><span class="note">Belum ada bukti verifikasi. Jalankan Verifikasi setelah implementasi.</span><span class="badge muted">unverified</span></div>`;
+  }
+  const summary = verification.summary || {};
+  return `<div class="verify-row">
+    <div>
+      <span class="badge ${verification.ok ? 'ok' : 'bad'}">${verification.ok ? 'verification passed' : 'verification failed'}</span>
+      <div class="note" style="margin-top:6px">Run ${esc(verification.runId)} · ${esc(fmtDate(verification.finishedAt))}</div>
+    </div>
+    <span class="note">Bukti terikat ke fingerprint working tree</span>
+  </div>
+  <div class="result-grid">
+    <div class="stat"><div class="stat-value">${esc(summary.commands ?? 0)}</div><div class="stat-label">commands</div></div>
+    <div class="stat"><div class="stat-value">${esc(summary.failedCommands?.length ?? 0)}</div><div class="stat-label">failed</div></div>
+    <div class="stat"><div class="stat-value">${esc(summary.slopErrors ?? 0)}</div><div class="stat-label">slop errors</div></div>
+    <div class="stat"><div class="stat-value">${esc(summary.scopeViolations ?? 0)}</div><div class="stat-label">scope violations</div></div>
+  </div>`;
+}
+
+function bindTaskActions(task) {
+  document.getElementById('actionStart')?.addEventListener('click', () => startTask(task, false));
+  document.getElementById('actionVerify')?.addEventListener('click', () => verify(task));
+  document.getElementById('actionComplete')?.addEventListener('click', () => complete(task));
+  document.getElementById('actionFail')?.addEventListener('click', () => openFailDialog(task));
+  document.getElementById('loadEvidence')?.addEventListener('click', () => loadEvidence(task));
+  document.getElementById('loadContext')?.addEventListener('click', () => loadContext(task));
+  if (state.evidence) renderEvidence();
+  if (state.context) renderContext();
+}
+
+async function startTask(task, acknowledgeCheckpoint) {
+  if (state.busy) return;
+  state.busy = { taskId: task.id, action: 'start' };
+  render();
+  try {
+    await api(`/api/tasks/${encodeURIComponent(task.id)}/start`, {
+      method: 'POST',
+      body: JSON.stringify({ acknowledgeCheckpoint })
+    });
+    toast(`${task.id} dimulai.`, 'good');
+    state.busy = null;
+    await loadState({ keepSelection: true });
+  } catch (error) {
+    if (error.status === 409 && error.data?.requiresCheckpoint) {
+      state.checkpoint = { task, data: error.data };
+      showCheckpointDialog(error.data);
+    } else {
+      toast(error.message, 'bad');
+    }
+    state.busy = null;
+    render();
+  }
+}
+
+async function verify(task) {
+  if (state.busy) return;
+  const started = Date.now();
+  state.busy = { taskId: task.id, action: 'verify', elapsed: '0s' };
+  render();
+  state.timer = setInterval(() => {
+    if (!state.busy) return;
+    state.busy.elapsed = Math.floor((Date.now() - started) / 1000) + 's';
+    const button = document.getElementById('actionVerify');
+    if (button) button.innerHTML = `<span class="spinner"></span> Verifikasi ${state.busy.elapsed}`;
+  }, 1000);
+  try {
+    const result = await api(`/api/tasks/${encodeURIComponent(task.id)}/verify`, { method: 'POST', body: '{}' });
+    toast(result.ok ? 'Verifikasi lulus. Task siap di-complete.' : 'Verifikasi gagal. Cek evidence.', result.ok ? 'good' : 'bad');
+    state.evidence = result.result;
+    state.busy = null;
+    clearInterval(state.timer);
+    await loadState({ keepSelection: true });
+    if (!result.ok) {
+      const area = document.getElementById('evidenceArea');
+      if (area) { area.classList.remove('hidden'); renderEvidence(); }
+    }
+  } catch (error) {
+    state.busy = null;
+    clearInterval(state.timer);
+    toast(error.message, 'bad');
+    render();
+  }
+}
+
+async function complete(task) {
+  if (state.busy) return;
+  state.busy = { taskId: task.id, action: 'complete' };
+  render();
+  try {
+    const result = await api(`/api/tasks/${encodeURIComponent(task.id)}/complete`, { method: 'POST', body: '{}' });
+    toast(`${task.id} selesai.`, 'good');
+    state.busy = null;
+    await loadState({ keepSelection: false });
+    if (result.next?.task) state.selectedId = result.next.task.id;
+    render();
+  } catch (error) {
+    toast(error.message, 'bad');
+    state.busy = null;
+    render();
+  }
+}
+
+function openFailDialog(task) {
+  state.checkpoint = state.checkpoint || null;
+  const dialog = document.getElementById('failDialog');
+  dialog.dataset.task = task.id;
+  document.getElementById('failReason').value = '';
+  dialog.showModal();
+}
+
+async function loadEvidence(task) {
+  try {
+    const data = await api(`/api/tasks/${encodeURIComponent(task.id)}/evidence`);
+    state.evidence = data.result;
+    const area = document.getElementById('evidenceArea');
+    if (area) {
+      area.classList.remove('hidden');
+      renderEvidence();
+    }
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+function renderEvidence() {
+  const area = document.getElementById('evidenceArea');
+  const result = state.evidence;
+  if (!area || !result) return;
+  const commands = result.commands || [];
+  area.innerHTML = `<div class="card-label">Evidence · ${esc(result.runId || '')}</div>
+    ${commands.map((command) => `<div class="command-row">
+      <div class="command-head">
+        <div>
+          <div class="command-name">${esc(command.name)} <span class="status-text ${command.ok ? 'pass' : 'fail'}">${command.ok ? 'PASS' : 'FAIL'}</span></div>
+          <div class="mono">${esc(command.command)} · exit ${esc(command.exitCode)} · ${esc(Math.round((command.durationMs || 0) / 1000))}s</div>
+        </div>
+        <button class="btn small ghost" data-log="${esc(command.log || '')}" ${command.log ? '' : 'disabled'}>Log</button>
+      </div>
+      ${command.outputTail ? `<pre class="code" style="margin-top:8px;max-height:220px">${esc(command.outputTail)}</pre>` : ''}
+    </div>`).join('')}
+    ${result.slop?.errors?.length ? `<div class="alert bad" style="margin-top:10px"><strong>Slop errors</strong>${result.slop.errors.map((finding) => `<div class="mono">${esc(finding.file)}:${esc(finding.line)} [${esc(finding.pattern)}] ${esc(finding.excerpt)}</div>`).join('')}</div>` : ''}
+    ${result.slop?.warnings?.length ? `<div class="alert" style="margin-top:10px"><strong>Slop warnings</strong>${result.slop.warnings.slice(0, 12).map((finding) => `<div class="mono">${esc(finding.file)}:${esc(finding.line)} [${esc(finding.pattern)}]</div>`).join('')}</div>` : ''}
+    ${result.scope?.violations?.length ? `<div class="alert bad" style="margin-top:10px"><strong>Scope violations</strong><div class="mono">${esc(result.scope.violations.join(', '))}</div></div>` : ''}
+  `;
+  area.querySelectorAll('[data-log]').forEach((button) => {
+    button.addEventListener('click', () => openLog(result.runId, button.getAttribute('data-log')));
+  });
+}
+
+async function openLog(runId, name) {
+  if (!runId || !name) return;
+  try {
+    const content = await api(`/api/run-log?runId=${encodeURIComponent(runId)}&name=${encodeURIComponent(name)}`);
+    document.getElementById('logTitle').textContent = name;
+    document.getElementById('logContent').textContent = content;
+    document.getElementById('logDialog').showModal();
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+async function loadContext(task) {
+  try {
+    const data = await api(`/api/tasks/${encodeURIComponent(task.id)}/context`);
+    state.context = data;
+    const area = document.getElementById('contextArea');
+    if (area) {
+      area.classList.remove('hidden');
+      renderContext();
+    }
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+function renderContext() {
+  const area = document.getElementById('contextArea');
+  if (!area || !state.context) return;
+  area.innerHTML = `<div class="card-label">Context pack · ${esc(state.context.files?.length || 0)} files · ${esc(state.context.used || 0)}/${esc(state.context.maxChars || 0)} chars</div>
+    <pre class="code" style="max-height:420px">${esc(state.context.markdown || '')}</pre>`;
+}
+
+function renderSpec() {
+  const data = state.data;
+  const check = data.spec.check;
+  const invalid = [
+    ...check.missing.map((item) => `<div class="error-item">Missing: ${esc(item.label)}</div>`),
+    ...check.empty.map((item) => `<div class="error-item">Empty: ${esc(item.label)} (line ${esc(item.line)})</div>`),
+    ...check.placeholders.map((item) => `<div class="error-item">Line ${esc(item.line)}: ${esc(item.reason)}</div>`)
+  ];
+  const warnings = check.warnings.map((warning) => `<div class="warn-item">${esc(warning)}</div>`);
+  return `<div class="spec-layout">
+    <div class="spec-doc">
+      <div class="card-label">Source of truth · .vibeguard/spec.md</div>
+      <div class="markdown">${renderMarkdown(data.spec.content)}</div>
+    </div>
+    <aside class="spec-check">
+      <div class="card">
+        <div class="card-label">Spec check</div>
+        <span class="badge ${check.ok ? 'ok' : 'warn'}">${check.ok ? 'valid' : 'needs work'}</span>
+        <div class="list-warning" style="margin-top:12px">${invalid.join('') || '<div class="warn-item">Tidak ada error.</div>'}</div>
+        ${warnings.length ? `<div class="card-label" style="margin-top:16px">Warnings</div><div class="list-warning">${warnings.join('')}</div>` : ''}
+        <div class="note" style="margin-top:14px">Edit lewat terminal: <span class="mono">vibeguard spec edit</span>. Spec tidak bisa diubah dari dashboard agar tetap human-owned.</div>
+      </div>
+    </aside>
+  </div>`;
+}
+
+function bindSpecActions() {}
+
+function renderMarkdown(markdown) {
+  const lines = String(markdown || '').split(/\r?\n/);
+  const output = [];
+  let inCode = false;
+  let codeLang = '';
+  let code = [];
+  let listType = null;
+  let paragraph = [];
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      output.push(`<p>${inline(paragraph.join(' '))}</p>`);
+      paragraph = [];
+    }
+  };
+  const closeList = () => {
+    if (listType) {
+      output.push(`</${listType}>`);
+      listType = null;
+    }
+  };
+  for (const rawLine of lines) {
+    const line = rawLine;
+    const fence = line.match(/^\s*(```+|~~~+)(.*)$/);
+    if (fence) {
+      if (!inCode) {
+        flushParagraph();
+        closeList();
+        inCode = true;
+        codeLang = fence[2].trim();
+        code = [];
+      } else {
+        output.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+        inCode = false;
+        codeLang = '';
+      }
+      continue;
+    }
+    if (inCode) { code.push(line); continue; }
+    if (!line.trim()) { flushParagraph(); closeList(); continue; }
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      closeList();
+      const level = heading[1].length;
+      output.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+      continue;
+    }
+    const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      flushParagraph();
+      const type = unordered ? 'ul' : 'ol';
+      if (listType !== type) {
+        closeList();
+        output.push(`<${type}>`);
+        listType = type;
+      }
+      const itemText = (unordered || ordered)[1].replace(/^\[( |x|X)\]\s*/, '');
+      output.push(`<li>${inline(itemText)}</li>`);
+      continue;
+    }
+    if (/^>\s?/.test(line)) {
+      flushParagraph();
+      closeList();
+      output.push(`<blockquote>${inline(line.replace(/^>\s?/, ''))}</blockquote>`);
+      continue;
+    }
+    paragraph.push(line.trim());
+  }
+  if (inCode) output.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+  flushParagraph();
+  closeList();
+  return output.join('\n');
+}
+
+function inline(text) {
+  let value = esc(text);
+  value = value.replace(/`([^`]+)`/g, '<code>$1</code>');
+  value = value.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  value = value.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  value = value.replace(/^-\s*\[( |x|X)\]\s*/, '');
+  return value;
+}
+
+function showCheckpointDialog(data) {
+  const dialog = document.getElementById('checkpointDialog');
+  document.getElementById('checkpointText').textContent = `${data.checkpoint.reason} ${data.hint || ''}`;
+  dialog.showModal();
+}
+
+document.getElementById('refreshBtn').addEventListener('click', () => loadState({ keepSelection: true }));
+document.getElementById('addTaskBtn').addEventListener('click', openAddDialog);
+document.querySelectorAll('[data-tab]').forEach((element) => {
+  element.addEventListener('click', () => {
+    state.tab = element.getAttribute('data-tab');
+    if (window.location.hash !== '#' + state.tab) {
+      history.replaceState(null, '', '#' + state.tab);
+    }
+    render();
+  });
+});
+window.addEventListener('hashchange', () => {
+  state.tab = window.location.hash === '#spec' ? 'spec' : 'task';
+  render();
+});
+document.querySelectorAll('[data-filter]').forEach((element) => {
+  element.addEventListener('click', () => {
+    state.filter = element.getAttribute('data-filter');
+    document.querySelectorAll('[data-filter]').forEach((button) => button.classList.toggle('active', button === element));
+    renderTaskList();
+  });
+});
+
+function openAddDialog() {
+  const dialog = document.getElementById('addDialog');
+  document.getElementById('addForm').reset();
+  document.getElementById('addPhase').value = '1';
+  dialog.showModal();
+}
+
+document.getElementById('addForm').addEventListener('submit', async (event) => {
+  if (event.submitter?.value === 'cancel') return;
+  event.preventDefault();
+  const submit = document.getElementById('addSubmit');
+  submit.disabled = true;
+  const criteria = document.getElementById('addCriteria').value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  const payload = {
+    title: document.getElementById('addTitle').value.trim(),
+    description: document.getElementById('addDesc').value.trim(),
+    acceptance: criteria,
+    files: document.getElementById('addFiles').value.split(',').map((item) => item.trim()).filter(Boolean),
+    layer: document.getElementById('addLayer').value,
+    phase: document.getElementById('addPhase').value.trim() || '1',
+    dependsOn: document.getElementById('addDepends').value.split(',').map((item) => item.trim()).filter(Boolean)
+  };
+  try {
+    const result = await api('/api/tasks', { method: 'POST', body: JSON.stringify(payload) });
+    document.getElementById('addDialog').close();
+    toast(`${result.task.id} ditambahkan.`, 'good');
+    state.selectedId = result.task.id;
+    await loadState({ keepSelection: true });
+  } catch (error) {
+    toast(error.message, 'bad');
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+document.getElementById('failForm').addEventListener('submit', async (event) => {
+  if (event.submitter?.value === 'cancel') return;
+  event.preventDefault();
+  const dialog = document.getElementById('failDialog');
+  const taskId = dialog.dataset.task;
+  const reason = document.getElementById('failReason').value.trim();
+  if (!reason) { toast('Isi alasan fail.', 'bad'); return; }
+  try {
+    await api(`/api/tasks/${encodeURIComponent(taskId)}/fail`, { method: 'POST', body: JSON.stringify({ reason }) });
+    dialog.close();
+    toast(`${taskId} ditandai gagal.`, 'bad');
+    await loadState({ keepSelection: true });
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+});
+
+function closeCheckpoint() {
+  document.getElementById('checkpointDialog').close();
+  state.checkpoint = null;
+}
+document.getElementById('checkpointCancel').addEventListener('click', closeCheckpoint);
+document.getElementById('checkpointCancel2').addEventListener('click', closeCheckpoint);
+document.getElementById('checkpointApprove').addEventListener('click', async () => {
+  const pending = state.checkpoint;
+  document.getElementById('checkpointDialog').close();
+  state.checkpoint = null;
+  if (pending?.task) await startTask(pending.task, true);
+});
+document.getElementById('logClose').addEventListener('click', () => document.getElementById('logDialog').close());
+
+async function loadState(options = {}) {
+  try {
+    const previousSelection = state.selectedId;
+    const data = await api('/api/state');
+    state.data = data;
+    if (!options.keepSelection) state.selectedId = data.next?.task?.id || state.selectedId;
+    if (previousSelection && previousSelection !== state.selectedId) {
+      state.evidence = null;
+      state.context = null;
+    }
+    render();
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+loadState();
+</script>
+</body>
+</html>

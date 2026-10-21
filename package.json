@@ -1,0 +1,19 @@
+{
+  "name": "vibeguard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first anti-slop harness for AI coding agents: spec, task gates, context packs, and mandatory verification.",
+  "type": "module",
+  "bin": {
+    "vibeguard": "./bin/vibeguard.js",
+    "vg": "./bin/vibeguard.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --test test/*.test.js && node bin/vibeguard.js --help"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "license": "UNLICENSED"
+}
