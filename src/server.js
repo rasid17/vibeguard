@@ -28,6 +28,8 @@ import {
 } from './tasks.js';
 import { readRun, readRunLog, verifyTask } from './verify.js';
 import { buildContextPack } from './context.js';
+import { buildGraph } from './graph.js';
+import { impactGraph, queryGraph } from './codegraph.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -141,6 +143,16 @@ export async function createUiServer(project, options = {}) {
   const token = crypto.randomBytes(24).toString('hex');
   const startedAt = Date.now();
   const htmlTemplate = await fs.readFile(path.join(__dirname, 'ui.html'), 'utf8');
+  let graphCache = null;
+  let graphCacheAt = 0;
+
+  async function currentGraph() {
+    if (!graphCache || Date.now() - graphCacheAt > 5000) {
+      graphCache = await buildGraph(project);
+      graphCacheAt = Date.now();
+    }
+    return graphCache;
+  }
 
   async function buildState() {
     const [config, spec] = await Promise.all([loadConfig(project), loadSpec(project)]);
@@ -162,6 +174,26 @@ export async function createUiServer(project, options = {}) {
 
     if (method === 'GET' && url.pathname === '/api/health') {
       json(res, 200, { ok: true, version: VERSION, uptimeMs: Date.now() - startedAt });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/graph') {
+      const graph = await currentGraph();
+      const query = url.searchParams.get('q');
+      const target = url.searchParams.get('target');
+      if (query) {
+        json(res, 200, {
+          stats: graph.stats,
+          query: queryGraph(graph, query, { limit: Number(url.searchParams.get('limit')) || 20 })
+        });
+        return;
+      }
+      if (target) {
+        const impact = impactGraph(graph, target, { depth: Number(url.searchParams.get('depth')) || 2 });
+        json(res, 200, { stats: graph.stats, impact });
+        return;
+      }
+      json(res, 200, { stats: graph.stats, generatedAt: graph.generatedAt });
       return;
     }
 

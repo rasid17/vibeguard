@@ -44,6 +44,8 @@ import {
   mcpConfigReport,
   writeMcpConfig
 } from './agentdocs.js';
+import { buildGraph, writeGraphCache } from './graph.js';
+import { graphToMermaid, impactGraph, queryGraph } from './codegraph.js';
 
 const HELP = `VibeGuard ${VERSION} — quality gate lokal untuk vibe coding
 
@@ -70,6 +72,11 @@ Perintah:
   task fail <id> "..."  Catat task gagal/blocked
   verify [id]           Alias task verify
   context [id]          Context pack untuk task
+  graph stats           Statistik codegraph
+  graph query <teks>    Cari file/simbol
+  graph impact <target> Dampak perubahan file/simbol (reverse imports)
+  graph build           Bangun dan cache codegraph
+  graph export          Ekspor graph (json/mermaid)
   ui                    Dashboard lokal (default 127.0.0.1:4317)
   mcp                   Jalankan MCP server (stdio)
   agent-config          Cetak / tulis konfigurasi MCP
@@ -714,6 +721,138 @@ async function commandVerify(project, args, globals) {
   await runVerification(project, id, globals);
 }
 
+function printGraphStats(stats) {
+  out(`Codegraph: ${stats.files} files | ${stats.symbols} symbols | ${stats.edges} edges | ${stats.tests} tests`);
+  const languages = Object.entries(stats.languages || {}).map(([lang, count]) => `${lang} ${count}`).join(', ');
+  if (languages) out(`Languages: ${languages}`);
+  if (stats.externalImports) out(`External imports: ${stats.externalImports}`);
+  if (stats.topHubs?.length) {
+    out('Top hubs (paling banyak di-import):');
+    for (const hub of stats.topHubs.slice(0, 10)) {
+      out(`  ${hub.path}  in:${hub.incoming} out:${hub.outgoing}${hub.test ? ' [test]' : ''}`);
+    }
+  }
+}
+
+async function commandGraph(project, args, globals) {
+  const sub = args[0] || 'stats';
+  const rest = args.slice(1);
+  if (!['stats', 'build', 'query', 'impact', 'export'].includes(sub)) {
+    throw new VibeError(`Subcommand graph tidak dikenal: ${sub}`, {
+      hint: 'Gunakan: stats, build, query, impact, export'
+    });
+  }
+  if (!globals.json) err('Membangun codegraph...');
+  const graph = await buildGraph(project);
+
+  if (sub === 'build') {
+    const file = await writeGraphCache(project, graph);
+    if (globals.json) {
+      jsonOut({ file, stats: graph.stats });
+    } else {
+      out(`Codegraph disimpan di ${path.relative(project, file)}`);
+      printGraphStats(graph.stats);
+    }
+    return;
+  }
+
+  if (sub === 'stats') {
+    if (globals.json) jsonOut(graph.stats);
+    else printGraphStats(graph.stats);
+    return;
+  }
+
+  if (sub === 'query') {
+    const { values, positionals } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: { limit: { type: 'string' } }
+    });
+    const query = positionals.join(' ').trim();
+    if (!query) throw new VibeError('Usage: vibeguard graph query <teks> [--limit 20]');
+    const result = queryGraph(graph, query, { limit: values.limit ? Number(values.limit) : undefined });
+    if (globals.json) {
+      jsonOut(result);
+    } else {
+      out(`${result.total} hasil untuk "${result.query}":`);
+      for (const match of result.matches) {
+        out(`  [${match.type}] ${match.path}${match.line ? `:${match.line}` : ''}${match.kind === 'test' ? ' [test]' : ''}  in:${match.incoming} out:${match.outgoing}${match.name !== path.basename(match.path) ? `  ${match.name}` : ''}`);
+      }
+      if (result.total === 0) out('Tidak ada node yang cocok.');
+    }
+    return;
+  }
+
+  if (sub === 'impact') {
+    const { values, positionals } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: { depth: { type: 'string' } }
+    });
+    const target = positionals.join(' ').trim();
+    if (!target) throw new VibeError('Usage: vibeguard graph impact <path|symbol> [--depth 2]');
+    const impact = impactGraph(graph, target, { depth: values.depth ? Number(values.depth) : 2 });
+    if (!impact.found) {
+      if (globals.json) jsonOut(impact);
+      else {
+        out(impact.ambiguous ? 'Target ambigu; pilih salah satu:' : `Target tidak ditemukan: ${target}`);
+        for (const candidate of impact.candidates) out(`  ${candidate.path}${candidate.test ? ' [test]' : ''}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    if (globals.json) {
+      jsonOut(impact);
+    } else {
+      out(`Target: ${impact.target}${impact.targetSymbol ? ` (symbol: ${impact.targetSymbol})` : ''}`);
+      out(`Risk: ${impact.risk} | Direct dependents: ${impact.directDependents.length} | Impacted: ${impact.totalImpacted}`);
+      if (impact.symbols.length) out(`Symbols: ${impact.symbols.slice(0, 12).join(', ')}`);
+      out('Direct dependents:');
+      for (const item of impact.directDependents) out(`  ${item.path}${item.test ? ' [test]' : ''}`);
+      if (impact.directDependents.length === 0) out('  (none)');
+      out('Tests:');
+      for (const test of impact.tests) out(`  ${test}`);
+      if (impact.tests.length === 0) out('  (none)');
+      if (impact.dependencies.length) {
+        out('Direct imports:');
+        for (const dep of impact.dependencies) out(`  ${dep.path}${dep.test ? ' [test]' : ''}`);
+      }
+      if (impact.notes.length) {
+        out('Notes:');
+        for (const note of impact.notes) out(`  ${note}`);
+      }
+    }
+    return;
+  }
+
+  if (sub === 'export') {
+    const { values } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: {
+        format: { type: 'string' },
+        target: { type: 'string' },
+        depth: { type: 'string' },
+        out: { type: 'string' }
+      }
+    });
+    const format = (values.format || 'json').toLowerCase();
+    let output;
+    if (format === 'json') output = `${JSON.stringify(graph, null, 2)}\n`;
+    else if (format === 'mermaid') output = `${graphToMermaid(graph, { target: values.target, depth: values.depth ? Number(values.depth) : 2 })}\n`;
+    else throw new VibeError(`Format graph tidak dikenal: ${format}`, { hint: 'Gunakan json atau mermaid.' });
+    if (values.out) {
+      const targetFile = path.resolve(values.out);
+      await writeFileAtomic(targetFile, output);
+      if (globals.json) jsonOut({ format, file: targetFile });
+      else out(`Graph ${format} ditulis ke ${targetFile}`);
+    } else {
+      process.stdout.write(output);
+    }
+    return;
+  }
+}
+
 async function commandContext(project, args, globals) {
   const id = args[0];
   const pack = await buildContextPack(project, id);
@@ -840,6 +979,9 @@ export async function run(argv) {
       break;
     case 'context':
       await commandContext(project, args, globals);
+      break;
+    case 'graph':
+      await commandGraph(project, args, globals);
       break;
     case 'ui':
       await commandUi(project, args);

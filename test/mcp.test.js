@@ -62,7 +62,12 @@ function createClient(project) {
 }
 
 test('MCP handshake, tool list, status and task creation', async (t) => {
-  const { project, cleanup } = await makeProject();
+  const { project, cleanup } = await makeProject({
+    files: {
+      'src/lib/auth.ts': 'export function login(email) { return email.length; }\n',
+      'src/app.ts': 'import { login } from "./lib/auth";\nexport const run = () => login("a@b.c");\n'
+    }
+  });
   const client = createClient(project);
   t.after(async () => {
     await client.close();
@@ -83,12 +88,31 @@ test('MCP handshake, tool list, status and task creation', async (t) => {
     'vibeguard_get_next_task',
     'vibeguard_get_context',
     'vibeguard_verify_task',
+    'vibeguard_graph_query',
+    'vibeguard_graph_impact',
     'vibeguard_record_evidence',
     'vibeguard_complete_task',
     'vibeguard_add_task'
   ]) {
     assert.ok(names.includes(expected), expected);
   }
+
+  const graphStats = await client.request('tools/call', { name: 'vibeguard_graph_stats', arguments: {} });
+  assert.equal(graphStats.result.isError, undefined);
+  assert.ok(graphStats.result.structuredContent.files >= 2);
+
+  const graphQuery = await client.request('tools/call', {
+    name: 'vibeguard_graph_query',
+    arguments: { query: 'auth' }
+  });
+  assert.ok(graphQuery.result.structuredContent.matches.some((match) => match.path === 'src/lib/auth.ts'));
+
+  const graphImpact = await client.request('tools/call', {
+    name: 'vibeguard_graph_impact',
+    arguments: { target: 'src/lib/auth.ts', depth: 2 }
+  });
+  assert.equal(graphImpact.result.structuredContent.found, true);
+  assert.ok(graphImpact.result.structuredContent.directDependents.some((item) => item.path === 'src/app.ts'));
 
   const status = await client.request('tools/call', { name: 'vibeguard_status', arguments: {} });
   assert.equal(status.result.isError, undefined);

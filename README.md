@@ -147,6 +147,8 @@ vibeguard_get_next_task
 → jika checkpoint.needed: berhenti, minta manusia menguji
 vibeguard_get_context { taskId }
 → baca file yang relevan
+vibeguard_graph_impact { target }
+→ opsional: lihat dependensi/test sebelum mengubah modul bersama
 vibeguard_start_task { taskId }
 → implementasi HANYA task itu
 vibeguard_verify_task { taskId }
@@ -167,6 +169,9 @@ Tool yang tersedia:
 | `vibeguard_get_next_task` | satu task berikutnya + checkpoint |
 | `vibeguard_get_context` | context pack untuk satu task |
 | `vibeguard_start_task` | mulai satu task; checkpoint butuh ack |
+| `vibeguard_graph_stats` | statistik codegraph: file, simbol, edge, test, top hubs |
+| `vibeguard_graph_query` | cari file/simbol dan lihat in/out degree |
+| `vibeguard_graph_impact` | reverse-import impact: dependents, transitive importers, tests, risk |
 | `vibeguard_verify_task` | jalankan checks, slop, secret, scope; mendukung `async: true` |
 | `vibeguard_verification_status` | cek job verifikasi async |
 | `vibeguard_record_evidence` | catat bukti untuk satu acceptance criterion (`A1`, `A2`, ...) |
@@ -205,6 +210,43 @@ MCP client punya batas waktu request. Jika test suite panjang, minta agent memak
 
 Lalu polling `vibeguard_verification_status`. Alternatifnya jalankan `vibeguard task verify T-001` di terminal; hasilnya tetap tercatat dan `complete_task` akan membacanya.
 
+## Codegraph
+
+VibeGuard punya codegraph lokal: graph struktural dari file kode, simbol, import, dan test. Ini bukan LSP atau call graph runtime; tujuannya membantu agent memilih konteks dan melihat blast radius sebelum mengubah kode.
+
+Node:
+
+- `file` untuk file kode: JS/TS, JSX/TSX, Vue, Svelte, Python, Go, Rust, SQL, Java/Kotlin, Ruby, PHP, C#/Swift/C/C++.
+- `symbol` untuk fungsi, class, type, route, dan simbol lain yang terdeteksi.
+
+Edge:
+
+- `defines`: file → simbol yang didefinisikan.
+- `imports`: file → file lokal yang di-import.
+- File test ditandai dan tetap terhubung melalui import yang sama.
+
+```sh
+vibeguard graph stats
+vibeguard graph query auth
+vibeguard graph impact src/lib/auth.ts
+vibeguard graph impact login --depth 2
+vibeguard graph build
+vibeguard graph export --format mermaid --target src/lib/auth.ts
+```
+
+- `impact` melakukan reverse-import BFS: siapa yang mengimpor target, siapa yang mengimpor mereka, test terkait, dan risk `low`/`medium`/`high`.
+- `query` mencari file/simbol beserta in/out degree.
+- `build` menyimpan cache graph di `.vibeguard/context/graph.json` (diabaikan git).
+- `export` menghasilkan JSON atau Mermaid.
+
+Integrasi:
+
+- `vibeguard context` otomatis menambahkan bagian **Codegraph impact** dan menaikkan prioritas file dependen serta test dalam context pack.
+- MCP menyediakan `vibeguard_graph_stats`, `vibeguard_graph_query`, dan `vibeguard_graph_impact`.
+- Dashboard punya tab **Codegraph** untuk statistik, pencarian, impact analysis, dan ego-network SVG.
+
+Batasan: graph dibangun dari regex dan bagian awal file, bukan AST/LSP penuh. Import relatif di-resolve; alias seperti `@/` dan package eksternal tidak menjadi edge. Call graph runtime tidak dilacak. Gunakan impact sebagai petunjuk navigasi, bukan jaminan bahwa semua dependensi dinamis tertangkap.
+
 ## Integrasi MCP
 
 `init` menulis `.mcp.json` untuk Claude Code:
@@ -241,6 +283,7 @@ project/
     ├── tasks.json                # task, status, evidence A1/A2, run pointer
     ├── agent-protocol.md
     ├── context/T-001.md          # context pack terakhir
+    ├── context/graph.json        # cache codegraph (diabaikan git)
     └── runs/
         └── <run-id>/
             ├── task.json
@@ -320,6 +363,7 @@ Saat secret ditemukan, excerpt di log/evidence **di-mask** sehingga token tidak 
 - Tidak ada LLM bawaan. Perencanaan dilakukan oleh agent Anda lewat `vibeguard plan` atau MCP.
 - Evidence criterion bersifat attestation; VibeGuard tidak bisa menilai apakah test/observasi benar-benar membuktikan requirement.
 - Secret scanner berbasis pattern dan mengabaikan test/docs/env secara default; bukan deteksi entropy/ML menyeluruh.
+- Codegraph berbasis regex/head, belum AST/LSP penuh; alias import dan dynamic dispatch belum terdeteksi.
 - Belum ada visual regression/screenshot review. Slop scan masih berbasis teks dan scope.
 - Dashboard belum mengedit spec; spec sengaja human-owned lewat editor.
 - Verifikasi di dashboard berjalan sinkron. Untuk test panjang, pakai MCP async atau CLI.
@@ -338,7 +382,7 @@ Saat secret ditemukan, excerpt di log/evidence **di-mask** sehingga token tidak 
 ## Development
 
 ```sh
-npm test        # 30 test: core, verification, contract, evidence, secret, context, MCP, HTTP, CLI
+npm test        # 35 test: core, verification, contract, evidence, secret, codegraph, context, MCP, HTTP, CLI
 npm run check   # test + help
 ```
 

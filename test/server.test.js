@@ -4,7 +4,12 @@ import { createUiServer } from '../src/server.js';
 import { makeProject } from './helpers.js';
 
 test('dashboard requires a token and serves state', async (t) => {
-  const { project, cleanup } = await makeProject();
+  const { project, cleanup } = await makeProject({
+    files: {
+      'src/lib/auth.ts': 'export function login(email) { return email.length; }\n',
+      'src/app.ts': 'import { login } from "./lib/auth";\nexport const run = () => login("a@b.c");\n'
+    }
+  });
   const server = await createUiServer(project, { port: 0, host: '127.0.0.1' });
   t.after(async () => {
     await server.close();
@@ -30,6 +35,20 @@ test('dashboard requires a token and serves state', async (t) => {
   assert.equal(state.project.path, project);
   assert.equal(state.tasks.length, 0);
   assert.equal(state.spec.check.ok, true);
+
+  const graphResponse = await fetch(`http://127.0.0.1:${server.port}/api/graph`, { headers });
+  assert.equal(graphResponse.status, 200);
+  const graphData = await graphResponse.json();
+  assert.ok(graphData.stats.files >= 2);
+
+  const graphQueryResponse = await fetch(`http://127.0.0.1:${server.port}/api/graph?q=auth`, { headers });
+  const graphQueryData = await graphQueryResponse.json();
+  assert.ok(graphQueryData.query.matches.some((match) => match.path === 'src/lib/auth.ts'));
+
+  const graphImpactResponse = await fetch(`http://127.0.0.1:${server.port}/api/graph?target=src/lib/auth.ts`, { headers });
+  const graphImpactData = await graphImpactResponse.json();
+  assert.equal(graphImpactData.impact.found, true);
+  assert.ok(graphImpactData.impact.directDependents.some((item) => item.path === 'src/app.ts'));
 
   const addResponse = await fetch(`http://127.0.0.1:${server.port}/api/tasks`, {
     method: 'POST',

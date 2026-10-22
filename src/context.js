@@ -15,6 +15,7 @@ import {
 } from './util.js';
 import { loadConfig, loadSpec, loadTask, loadTasksFile, normalizeTask } from './store.js';
 import { checkSpec, parseSpec } from './spec.js';
+import { graphFromIndex, impactGraph } from './codegraph.js';
 
 const STOPWORDS = new Set([
   'the', 'and', 'for', 'with', 'this', 'that', 'from', 'into', 'are', 'was', 'were', 'have', 'has',
@@ -246,6 +247,82 @@ function specExcerpt(markdown, budget = 5000) {
   return truncate(parts.join('\n\n'), budget);
 }
 
+function graphTargetsForTask(graph, task, ranked) {
+  const patterns = task.files || [];
+  const codePaths = new Set(graph.files.map((file) => file.path));
+  const targets = [];
+  if (patterns.length > 0) {
+    for (const file of graph.files) {
+      if (patterns.some((pattern) => matchGlob(file.path, pattern))) targets.push(file.path);
+    }
+  } else {
+    for (const entry of ranked) {
+      if (!codePaths.has(entry.file.rel)) continue;
+      targets.push(entry.file.rel);
+      if (targets.length >= 3) break;
+    }
+  }
+  return [...new Set(targets)].slice(0, 6);
+}
+
+function graphImpactForTask(graph, targets) {
+  const impacts = [];
+  const hints = new Map();
+  const tests = new Set();
+  let riskRank = 0;
+  for (const target of targets) {
+    const impact = impactGraph(graph, target, { depth: 2 });
+    if (!impact.found) continue;
+    impacts.push({ target, impact });
+    for (const item of impact.impacted) {
+      const boost = item.test ? 12 : item.depth === 1 ? 18 : 8;
+      const current = hints.get(item.path);
+      if (!current || boost > current.boost) {
+        hints.set(item.path, {
+          ...item,
+          target,
+          boost,
+          role: item.test ? 'test' : item.depth === 1 ? 'dependent' : 'impacted'
+        });
+      }
+    }
+    for (const test of impact.tests) {
+      tests.add(test);
+      if (!hints.has(test)) {
+        hints.set(test, { path: test, depth: 1, test: true, target, boost: 12, role: 'test' });
+      }
+    }
+    if (impact.risk === 'high') riskRank = Math.max(riskRank, 3);
+    else if (impact.risk === 'medium') riskRank = Math.max(riskRank, 2);
+    else riskRank = Math.max(riskRank, 1);
+  }
+  const risk = riskRank === 3 ? 'high' : riskRank === 2 ? 'medium' : riskRank === 1 ? 'low' : 'none';
+  return { impacts, hints, tests, risk };
+}
+
+function graphImpactSection(impacts) {
+  if (impacts.length === 0) return '';
+  const lines = ['## Codegraph impact'];
+  for (const { target, impact } of impacts.slice(0, 6)) {
+    lines.push(`### ${target}`);
+    lines.push(`Risk: ${impact.risk} | Direct dependents: ${impact.directDependents.length} | Impacted: ${impact.totalImpacted} | Tests: ${impact.tests.length}`);
+    if (impact.directDependents.length > 0) {
+      lines.push('Direct dependents:');
+      for (const item of impact.directDependents.slice(0, 8)) lines.push(`- ${item.path}${item.test ? ' (test)' : ''}`);
+    } else {
+      lines.push('Direct dependents: none');
+    }
+    if (impact.tests.length > 0) {
+      lines.push('Tests touching target:');
+      for (const test of impact.tests.slice(0, 8)) lines.push(`- ${test}`);
+    } else {
+      lines.push('Tests touching target: none');
+    }
+  }
+  lines.push('Impact ini struktural (import graph), bukan jaminan runtime. Baca dependensi sebelum mengubah kontrak.');
+  return `${lines.join('\n')}\n`;
+}
+
 function commandList(config) {
   const commands = config.verification?.commands || [];
   if (commands.length === 0) return '- (belum ada perintah verifikasi dikonfigurasi)';
@@ -287,6 +364,22 @@ export async function buildContextPack(project, taskId, options = {}) {
     }))
     .sort((a, b) => b.score - a.score || a.file.rel.localeCompare(b.file.rel));
 
+  const graph = graphFromIndex(index);
+  const graphTargets = graphTargetsForTask(graph, task, ranked);
+  const graphImpact = graphImpactForTask(graph, graphTargets);
+  if (graphImpact.hints.size > 0) {
+    const byRel = new Map(ranked.map((entry) => [entry.file.rel, entry]));
+    for (const hint of graphImpact.hints.values()) {
+      const entry = byRel.get(hint.path);
+      if (entry) {
+        entry.score += hint.boost;
+      } else if (index.byRel.has(hint.path)) {
+        ranked.push({ file: index.byRel.get(hint.path), score: hint.boost + 4, graph: hint });
+      }
+    }
+    ranked = ranked.sort((a, b) => b.score - a.score || a.file.rel.localeCompare(b.file.rel));
+  }
+
   const maxChars = Number(options.maxChars) || Number(config.context?.maxChars) || 24_000;
   const parts = [];
   let used = 0;
@@ -320,6 +413,8 @@ ${specCheck.ok ? '' : `PERINGATAN: spec belum valid (${specCheck.missing.map((it
 
 ## Verification commands
 ${commandList(config)}
+
+${graphImpactSection(graphImpact.impacts)}
 
 ## Conventions
 `);

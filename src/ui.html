@@ -209,6 +209,32 @@ pre.code {
 .command-name { font-weight: 600; font-size: 12px; }
 .status-text.pass { color: var(--accent); }
 .status-text.fail { color: var(--red); }
+.graph-grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 18px; align-items: start; margin-top: 16px; }
+.graph-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.graph-search { display: flex; gap: 8px; margin-bottom: 12px; }
+.graph-search input { flex: 1; min-width: 0; background: #0a1218; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; outline: none; }
+.graph-search input:focus { border-color: rgba(74,222,128,.45); }
+.graph-target { width: 100%; text-align: left; border: 1px solid var(--border-soft); background: rgba(8,13,18,.35); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; color: #c8d5e2; font-family: var(--mono); font-size: 10.5px; display: flex; justify-content: space-between; gap: 8px; }
+.graph-target:hover { border-color: rgba(74,222,128,.35); background: rgba(74,222,128,.05); }
+.graph-target span { color: var(--muted); white-space: nowrap; }
+.graph-result-list { max-height: 380px; overflow-y: auto; }
+.graph-risk { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; border: 1px solid var(--border); }
+.graph-risk.low { color: var(--accent); border-color: rgba(74,222,128,.35); background: rgba(74,222,128,.06); }
+.graph-risk.medium { color: var(--amber); border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.06); }
+.graph-risk.high { color: var(--red); border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.06); }
+.graph-ego { background: #080d12; border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden; margin: 12px 0; }
+.graph-ego svg { display: block; width: 100%; height: auto; }
+.graph-ego text { font-family: var(--mono); font-size: 9px; fill: #a9bbcd; }
+.graph-ego .target-label { fill: #d1fae5; font-weight: 700; }
+.graph-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10px; color: var(--muted); margin-top: 8px; }
+.graph-legend span::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 999px; margin-right: 5px; background: #64748b; }
+.graph-legend .dep::before { background: var(--blue); }
+.graph-legend .test::before { background: var(--amber); }
+.graph-legend .target::before { background: var(--accent); }
+.graph-lists { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.graph-lists .card { min-width: 0; }
+.graph-lists ul.clean li { font-family: var(--mono); font-size: 10.5px; color: #a9bbcd; display: list-item; list-style: none; }
+.graph-lists ul.clean { gap: 4px; }
 .spec-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
 .spec-doc { min-width: 0; }
 .spec-check { position: sticky; top: 78px; }
@@ -266,6 +292,7 @@ pre.code {
   .task-list { max-height: 260px; }
   .spec-layout { grid-template-columns: 1fr; }
   .spec-check { position: static; }
+  .graph-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .layout { padding: 10px; }
@@ -276,6 +303,7 @@ pre.code {
   h1 { font-size: 20px; }
   .brand-sub { display: none; }
   .field-row { grid-template-columns: 1fr; }
+  .graph-lists { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -330,6 +358,7 @@ pre.code {
     <div class="tabs">
       <button class="tab active" data-tab="task" id="tabTask">Task</button>
       <button class="tab" data-tab="spec" id="tabSpec">Spec</button>
+      <button class="tab" data-tab="graph" id="tabGraph">Codegraph</button>
       <span class="note" id="headerHint" style="margin-left:auto"></span>
     </div>
     <section class="panel main-panel" id="mainPanel"></section>
@@ -491,11 +520,16 @@ function toast(message, tone = '') {
   toastTimer = setTimeout(() => { toastEl.className = 'toast'; }, 4200);
 }
 
-const initialTab = window.location.hash === '#spec' ? 'spec' : 'task';
+const hashTab = window.location.hash.replace('#', '');
+const initialTab = ['spec', 'graph'].includes(hashTab) ? hashTab : 'task';
 const state = {
   data: null,
   selectedId: null,
   tab: initialTab,
+  graph: null,
+  graphQuery: null,
+  graphImpact: null,
+  graphLoading: false,
   filter: 'open',
   busy: null,
   evidence: null,
@@ -623,6 +657,11 @@ function render() {
   if (state.tab === 'spec') {
     panel.innerHTML = renderSpec();
     bindSpecActions();
+    return;
+  }
+  if (state.tab === 'graph') {
+    panel.innerHTML = renderGraph();
+    bindGraphActions();
     return;
   }
   const task = selectedTask();
@@ -937,6 +976,231 @@ function renderContext() {
     <pre class="code" style="max-height:420px">${esc(state.context.markdown || '')}</pre>`;
 }
 
+
+async function loadGraphData() {
+  if (state.graphLoading) return;
+  state.graphLoading = true;
+  render();
+  try {
+    const data = await api('/api/graph');
+    state.graph = data;
+    state.graphQuery = null;
+    state.graphImpact = null;
+  } catch (error) {
+    toast(error.message, 'bad');
+  } finally {
+    state.graphLoading = false;
+    render();
+  }
+}
+
+async function searchGraph(query) {
+  const value = String(query || '').trim();
+  if (!value) {
+    state.graphQuery = null;
+    render();
+    return;
+  }
+  state.graphLoading = true;
+  render();
+  try {
+    const data = await api(`/api/graph?q=${encodeURIComponent(value)}`);
+    state.graphQuery = data.query;
+    state.graphImpact = null;
+  } catch (error) {
+    toast(error.message, 'bad');
+  } finally {
+    state.graphLoading = false;
+    render();
+  }
+}
+
+async function loadGraphImpact(target) {
+  if (!target || state.graphLoading) return;
+  state.graphLoading = true;
+  render();
+  try {
+    const data = await api(`/api/graph?target=${encodeURIComponent(target)}&depth=2`);
+    state.graphImpact = data.impact;
+  } catch (error) {
+    toast(error.message, 'bad');
+  } finally {
+    state.graphLoading = false;
+    render();
+  }
+}
+
+function shortPath(value, max = 34) {
+  const parts = String(value).split('/');
+  const label = parts.length > 2 ? parts.slice(-2).join('/') : String(value);
+  return label.length > max ? `…${label.slice(-(max - 1))}` : label;
+}
+
+function renderGraphQuery() {
+  if (!state.graphQuery) {
+    return '<div class="note" style="margin-bottom:4px">Klik top hub atau cari simbol untuk melihat blast radius.</div>';
+  }
+  const result = state.graphQuery;
+  if (!result.matches.length) return `<div class="note">Tidak ada hasil untuk <span class="mono">${esc(result.query)}</span>.</div>`;
+  return `<div class="graph-result-list" style="margin-bottom:14px">
+    <div class="note" style="margin-bottom:6px">${esc(result.total)} hasil untuk <span class="mono">${esc(result.query)}</span></div>
+    ${result.matches.map((match) => {
+      const target = match.type === 'symbol' ? match.id : match.path;
+      const label = match.type === 'symbol' ? `${match.name} · ${match.path}${match.line ? `:${match.line}` : ''}` : match.path;
+      return `<button class="graph-target" data-graph-target="${esc(target)}"><span>${esc(label)}</span><span>in ${esc(match.incoming)} / out ${esc(match.outgoing)}${match.test ? ' test' : ''}</span></button>`;
+    }).join('')}
+  </div>`;
+}
+
+function renderGraphImpact() {
+  if (state.graphLoading && !state.graphImpact) {
+    return `<div class="empty" style="padding:40px 20px"><span class="spinner"></span><p>Membangun graph dan menghitung impact...</p></div>`;
+  }
+  const impact = state.graphImpact;
+  if (!impact) {
+    return `<div class="empty" style="padding:40px 20px"><h3>Impact analysis</h3><p>Pilih file atau simbol di sebelah kiri. Graph akan menghitung siapa yang mengimpor target, test yang terkait, dan blast radius-nya.</p></div>`;
+  }
+  if (!impact.found) {
+    return `<div class="card-label">Impact analysis</div>
+      ${impact.ambiguous ? '<div class="alert">Target ambigu. Pilih salah satu file:</div>' : '<div class="alert bad">Target tidak ditemukan.</div>'}
+      <div style="margin-top:10px">${impact.candidates.map((candidate) => `<button class="graph-target" data-graph-target="${esc(candidate.path)}"><span>${esc(candidate.path)}</span><span>${candidate.test ? 'test' : 'file'}</span></button>`).join('')}</div>`;
+  }
+  const dependents = impact.directDependents || [];
+  const tests = impact.tests || [];
+  const dependencies = impact.dependencies || [];
+  return `<div class="graph-panel-title">
+      <div>
+        <div class="card-label">Impact analysis</div>
+        <h2 style="margin:2px 0 4px;font-family:var(--mono);font-size:14px">${esc(impact.target)}</h2>
+        <div class="note">${impact.targetSymbol ? `Simbol: <span class="mono">${esc(impact.targetSymbol)}</span> · ` : ''}Direct dependents: ${dependents.length} · Impacted: ${impact.totalImpacted} · Tests: ${tests.length}</div>
+      </div>
+      <span class="graph-risk ${esc(impact.risk)}">${esc(impact.risk)} risk</span>
+    </div>
+    ${renderEgo(impact.ego)}
+    ${impact.notes.length ? `<div class="alert" style="margin-top:8px">${impact.notes.map((note) => esc(note)).join('<br>')}</div>` : ''}
+    <div class="graph-lists" style="margin-top:12px">
+      <div class="card">
+        <div class="card-label">Direct dependents</div>
+        ${dependents.length ? `<ul class="clean">${dependents.map((item) => `<li><button class="graph-target" data-graph-target="${esc(item.path)}"><span>${esc(item.path)}</span><span>${item.test ? 'test' : 'imports'}</span></button></li>`).join('')}</ul>` : '<div class="note">Tidak ada file yang mengimpor target secara langsung.</div>'}
+      </div>
+      <div class="card">
+        <div class="card-label">Tests</div>
+        ${tests.length ? `<ul class="clean">${tests.map((test) => `<li><button class="graph-target" data-graph-target="${esc(test)}"><span>${esc(test)}</span><span>test</span></button></li>`).join('')}</ul>` : '<div class="note">Tidak ada test yang terhubung ke target.</div>'}
+      </div>
+      <div class="card">
+        <div class="card-label">Direct imports</div>
+        ${dependencies.length ? `<ul class="clean">${dependencies.map((item) => `<li><button class="graph-target" data-graph-target="${esc(item.path)}"><span>${esc(item.path)}</span><span>import</span></button></li>`).join('')}</ul>` : '<div class="note">Target tidak mengimpor file kode lokal.</div>'}
+      </div>
+    </div>`;
+}
+
+function renderEgo(ego) {
+  if (!ego || !ego.nodes || ego.nodes.length === 0) return '';
+  const width = 760;
+  const height = 430;
+  const center = { x: 380, y: 205 };
+  const positions = new Map();
+  const target = ego.nodes.find((node) => node.role === 'target');
+  if (target) positions.set(target.path, { ...center, anchor: 'middle' });
+  const deps = ego.nodes.filter((node) => node.role === 'dependency');
+  const dependents = ego.nodes.filter((node) => node.role === 'dependent');
+  const tests = ego.nodes.filter((node) => node.role === 'test');
+  const place = (list, x, y0, y1, anchor) => {
+    list.forEach((node, index) => {
+      const y = list.length === 1 ? (y0 + y1) / 2 : y0 + ((y1 - y0) * index) / (list.length - 1);
+      positions.set(node.path, { x, y, anchor });
+    });
+  };
+  place(deps, 635, 55, 355, 'start');
+  place(dependents, 125, 55, 330, 'end');
+  tests.forEach((node, index) => {
+    const x = tests.length === 1 ? 380 : 150 + (460 * index) / (tests.length - 1);
+    positions.set(node.path, { x, y: 390, anchor: 'middle' });
+  });
+  const edgeSvg = ego.edges.map((edge) => {
+    const from = positions.get(edge.from);
+    const to = positions.get(edge.to);
+    if (!from || !to) return '';
+    const color = edge.type === 'test' ? '#fbbf24' : edge.from === target?.path ? '#60a5fa' : '#3b4d61';
+    const dash = edge.type === 'test' ? ' stroke-dasharray="4 3"' : '';
+    return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${color}" stroke-width="1.2" stroke-opacity=".8"${dash} />`;
+  }).join('');
+  const nodeSvg = ego.nodes.map((node) => {
+    const pos = positions.get(node.path);
+    if (!pos) return '';
+    const color = node.role === 'target' ? '#4ade80' : node.role === 'test' ? '#fbbf24' : node.role === 'dependency' ? '#60a5fa' : '#64748b';
+    const radius = node.role === 'target' ? 8 : 4.5;
+    const label = shortPath(node.path);
+    const labelX = pos.anchor === 'end' ? pos.x - 8 : pos.anchor === 'start' ? pos.x + 8 : pos.x;
+    const labelY = node.role === 'target' ? pos.y + 22 : pos.anchor === 'middle' ? pos.y - 9 : pos.y + 3;
+    const cls = node.role === 'target' ? ' target-label' : '';
+    return `<g><title>${esc(node.path)}</title><circle cx="${pos.x}" cy="${pos.y}" r="${radius}" fill="${color}" fill-opacity=".95" stroke="#0a0f14" stroke-width="2" /><text x="${labelX}" y="${labelY}" text-anchor="${pos.anchor}" class="${cls}">${esc(label)}</text></g>`;
+  }).join('');
+  return `<div class="graph-ego"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Ego network impact graph">${edgeSvg}${nodeSvg}</svg></div>
+    <div class="graph-legend"><span class="target">target</span><span class="dep">direct import</span><span>dependent</span><span class="test">test</span></div>`;
+}
+
+function renderGraph() {
+  if (!state.graph && state.graphLoading) {
+    return `<div class="empty"><span class="spinner"></span><h3>Membangun codegraph</h3><p>Memindai file, simbol, import, dan test.</p></div>`;
+  }
+  if (!state.graph) {
+    return `<div class="empty"><h3>Codegraph</h3><p>Graph struktural file, simbol, import, dan test. Tidak ada LLM; semuanya dihitung lokal.</p><button class="btn primary" id="graphLoad">Muat codegraph</button></div>`;
+  }
+  const stats = state.graph.stats || {};
+  const languages = Object.entries(stats.languages || {}).map(([language, count]) => `${language} ${count}`).join(', ');
+  return `<div class="graph-panel-title">
+      <div>
+        <div class="card-label">Codegraph · structural map</div>
+        <h1 style="margin:0">Files, symbols, imports, tests</h1>
+        <p class="note" style="margin:6px 0 0">Graph ini dibangun dari import dan definisi simbol. Impact bersifat struktural, bukan runtime call graph.</p>
+      </div>
+      <button class="btn small" id="graphRefresh" ${state.graphLoading ? 'disabled' : ''}>${state.graphLoading ? '<span class="spinner"></span> Memuat' : 'Refresh'}</button>
+    </div>
+    <div class="result-grid">
+      <div class="stat"><div class="stat-value">${esc(stats.files ?? 0)}</div><div class="stat-label">files</div></div>
+      <div class="stat"><div class="stat-value">${esc(stats.symbols ?? 0)}</div><div class="stat-label">symbols</div></div>
+      <div class="stat"><div class="stat-value">${esc(stats.edges ?? 0)}</div><div class="stat-label">edges</div></div>
+      <div class="stat"><div class="stat-value">${esc(stats.tests ?? 0)}</div><div class="stat-label">tests</div></div>
+      <div class="stat"><div class="stat-value">${esc(stats.externalImports ?? 0)}</div><div class="stat-label">external imports</div></div>
+    </div>
+    ${languages ? `<div class="note" style="margin-top:8px">Languages: ${esc(languages)}</div>` : ''}
+    <div class="graph-grid">
+      <div class="card">
+        <div class="card-label">Cari file atau simbol</div>
+        <form class="graph-search" id="graphSearchForm">
+          <input id="graphSearchInput" placeholder="auth, login, Button..." value="${esc(state.graphQuery?.query || '')}">
+          <button class="btn primary small" ${state.graphLoading ? 'disabled' : ''}>Cari</button>
+        </form>
+        ${renderGraphQuery()}
+        <div class="card-label" style="margin-top:16px">Top hubs</div>
+        <div class="graph-result-list">
+          ${(stats.topHubs || []).map((hub) => `<button class="graph-target" data-graph-target="${esc(hub.path)}"><span>${esc(hub.path)}</span><span>in ${esc(hub.incoming)} / out ${esc(hub.outgoing)}${hub.test ? ' test' : ''}</span></button>`).join('') || '<div class="note">Belum ada file kode.</div>'}
+        </div>
+      </div>
+      <div class="card">
+        ${renderGraphImpact()}
+      </div>
+    </div>`;
+}
+
+function bindGraphActions() {
+  document.getElementById('graphLoad')?.addEventListener('click', () => loadGraphData());
+  document.getElementById('graphRefresh')?.addEventListener('click', () => {
+    state.graph = null;
+    state.graphImpact = null;
+    state.graphQuery = null;
+    loadGraphData();
+  });
+  document.getElementById('graphSearchForm')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    searchGraph(document.getElementById('graphSearchInput').value);
+  });
+  document.querySelectorAll('[data-graph-target]').forEach((element) => {
+    element.addEventListener('click', () => loadGraphImpact(element.getAttribute('data-graph-target')));
+  });
+}
+
 function renderSpec() {
   const data = state.data;
   const check = data.spec.check;
@@ -1069,17 +1333,23 @@ function showCheckpointDialog(data) {
 
 document.getElementById('refreshBtn').addEventListener('click', () => loadState({ keepSelection: true }));
 document.getElementById('addTaskBtn').addEventListener('click', openAddDialog);
+function ensureGraphLoaded() {
+  if (state.tab === 'graph' && !state.graph && !state.graphLoading) void loadGraphData();
+}
 document.querySelectorAll('[data-tab]').forEach((element) => {
   element.addEventListener('click', () => {
     state.tab = element.getAttribute('data-tab');
     if (window.location.hash !== '#' + state.tab) {
       history.replaceState(null, '', '#' + state.tab);
     }
+    ensureGraphLoaded();
     render();
   });
 });
 window.addEventListener('hashchange', () => {
-  state.tab = window.location.hash === '#spec' ? 'spec' : 'task';
+  const tab = window.location.hash === '#spec' ? 'spec' : window.location.hash === '#graph' ? 'graph' : 'task';
+  state.tab = tab;
+  ensureGraphLoaded();
   render();
 });
 document.querySelectorAll('[data-filter]').forEach((element) => {
@@ -1197,6 +1467,7 @@ async function loadState(options = {}) {
       state.context = null;
     }
     render();
+    if (state.tab === 'graph' && !state.graph && !state.graphLoading) void loadGraphData();
   } catch (error) {
     toast(error.message, 'bad');
   }

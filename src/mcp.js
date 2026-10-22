@@ -26,6 +26,8 @@ import {
 } from './tasks.js';
 import { summarizeVerificationResult, verifyTask } from './verify.js';
 import { buildContextPack } from './context.js';
+import { buildGraph } from './graph.js';
+import { impactGraph, queryGraph } from './codegraph.js';
 
 const INSTRUCTIONS = `VibeGuard is a local quality gate for AI coding. This project has no billing and no telemetry.
 Work one task at a time:
@@ -34,6 +36,7 @@ Work one task at a time:
 3. vibeguard_start_task (acknowledgeCheckpoint only after explicit human approval).
 4. Implement only that task, inside its file scope.
 5. vibeguard_verify_task. If checks are slow, call it with async:true and poll vibeguard_verification_status.
+   Before changing a shared module, call vibeguard_graph_impact to see its dependents and tests.
 6. Record evidence for every acceptance criterion with vibeguard_record_evidence (A1, A2, ...). Do not skip a criterion.
 7. vibeguard_complete_task only after a passing verification and complete evidence. Then commit. Stop at checkpoints.
 Never fake verification output, never add a task without acceptance criteria, and never edit the spec or task data to force a pass.`;
@@ -62,6 +65,37 @@ const TOOLS = [
     name: 'vibeguard_get_next_task',
     description: 'Return the single next task. If checkpoint.needed is true, stop and ask the human to test the previous layer/phase before starting.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+  },
+  {
+    name: 'vibeguard_graph_stats',
+    description: 'Codegraph summary: files, symbols, import edges, tests, languages, and the most depended-on files. Read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+  },
+  {
+    name: 'vibeguard_graph_query',
+    description: 'Search the codegraph for files or symbols by name/path. Returns import in/out degrees.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'number' }
+      },
+      required: ['query'],
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'vibeguard_graph_impact',
+    description: 'Reverse-import impact analysis for a file or symbol: direct dependents, transitive importers, tests, risk, and an ego graph. Use before changing shared code.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'file path or symbol name' },
+        depth: { type: 'number', description: '1-5, default 2' }
+      },
+      required: ['target'],
+      additionalProperties: false
+    }
   },
   {
     name: 'vibeguard_get_context',
@@ -209,6 +243,16 @@ function summaryLine(result) {
 
 export async function startMcpServer(project) {
   const jobs = new Map();
+  let graphCache = null;
+  let graphCacheAt = 0;
+
+  async function currentGraph() {
+    if (!graphCache || Date.now() - graphCacheAt > 5000) {
+      graphCache = await buildGraph(project);
+      graphCacheAt = Date.now();
+    }
+    return graphCache;
+  }
   const rl = readline.createInterface({ input: process.stdin, terminal: false });
   let chain = Promise.resolve();
   let closed = false;
@@ -255,6 +299,17 @@ export async function startMcpServer(project) {
       }
       case 'vibeguard_get_next_task':
         return getNextTask(project);
+      case 'vibeguard_graph_stats': {
+        return (await currentGraph()).stats;
+      }
+      case 'vibeguard_graph_query': {
+        if (!args.query) throw new VibeError('query wajib diisi.');
+        return queryGraph(await currentGraph(), args.query, { limit: args.limit });
+      }
+      case 'vibeguard_graph_impact': {
+        if (!args.target) throw new VibeError('target wajib diisi.');
+        return impactGraph(await currentGraph(), args.target, { depth: args.depth });
+      }
       case 'vibeguard_get_context': {
         if (!args.taskId) throw new VibeError('taskId wajib diisi.');
         const pack = await buildContextPack(project, args.taskId, { maxChars: args.maxChars });

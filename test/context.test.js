@@ -10,7 +10,9 @@ test('context pack selects relevant files and excludes secrets', async () => {
   const { project, cleanup } = await makeProject({
     files: {
       'src/auth/login.ts': 'import { hash } from "../util/crypto";\nexport function login(email: string) { return hash(email); }\n',
+      'src/auth/login.test.ts': 'import { login } from "./login";\nlogin("test@example.com");\n',
       'src/util/crypto.ts': 'export function hash(value: string) { return value.length; }\n',
+      'src/app.ts': 'import { login } from "./auth/login";\nexport const start = () => login("a@b.c");\n',
       'src/unrelated.ts': 'export const unrelated = true;\n',
       'docs/guide.md': '# Guide\n\nLogin documentation.\n',
       '.env': 'SECRET_TOKEN=super-secret-value\n',
@@ -32,6 +34,9 @@ test('context pack selects relevant files and excludes secrets', async () => {
     assert.match(pack.markdown, /src\/auth\/login\.ts/);
     assert.match(pack.markdown, /src\/util\/crypto\.ts/);
     assert.match(pack.markdown, /The current workflow lets coding agents/);
+    assert.match(pack.markdown, /## Codegraph impact/);
+    assert.match(pack.markdown, /src\/app\.ts/);
+    assert.match(pack.markdown, /src\/auth\/login\.test\.ts/);
     assert.doesNotMatch(pack.markdown, /super-secret-value/);
     assert.ok(pack.files.includes('src/auth/login.ts'));
     const stat = await fs.stat(pack.outputFile);

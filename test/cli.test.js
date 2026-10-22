@@ -43,6 +43,16 @@ test('CLI init, spec validation and task creation', async (t) => {
     await fs.access(path.join(project, rel));
   }
 
+  await fs.mkdir(path.join(project, 'src'), { recursive: true });
+  await fs.writeFile(path.join(project, 'src', 'index.ts'), 'export function main() { return 1; }\n');
+  const graph = await runCli(project, ['graph', 'stats']);
+  assert.equal(graph.code, 0, graph.stderr);
+  assert.match(graph.stdout, /Codegraph:/);
+  assert.match(graph.stdout, /src\/index\.ts/);
+  const graphImpact = await runCli(project, ['graph', 'impact', 'src/index.ts']);
+  assert.equal(graphImpact.code, 0, graphImpact.stderr);
+  assert.match(graphImpact.stdout, /Target: src\/index\.ts/);
+
   const badSpec = await runCli(project, ['spec', 'check']);
   assert.equal(badSpec.code, 1);
   assert.match(badSpec.stdout, /belum valid/i);
